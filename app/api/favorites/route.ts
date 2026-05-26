@@ -1,48 +1,73 @@
 import { NextResponse } from "next/server";
+import {
+  getUserFromRequest,
+  type SentenceAnalysisRow,
+} from "../../../lib/supabase-server";
 
-export async function GET() {
-  return NextResponse.json([
-    {
-      id: "mock-favorite-1",
-      imageUrl: "/mock-uploads/favorite-1.png",
-      sourceLanguage: "German",
-      explanationLanguage: "Chinese",
-      originalSentence: "Welche Farbe hat Ihr Koffer?",
-      originalTranslation: "What color is your suitcase?",
-      translatedSentence: "您的行李箱是什么颜色？",
-      sentenceBreakdown: [
-        {
-          part: "Welche Farbe",
-          explanation: "what color",
-        },
-        {
-          part: "hat",
-          explanation: "has / does ... have",
-        },
-      ],
-      vocabulary: [
-        {
-          word: "Koffer",
-          meaning: "suitcase",
-          note: "masculine noun",
-        },
-      ],
-      grammarPoints: [
-        {
-          title: 'German often uses "Welche Farbe hat..."',
-          explanation: 'This structure asks "What color is..." in English.',
-        },
-      ],
-      similarExamples: [
-        {
-          sentence: "Welche Farbe hat Ihr Auto?",
-          translation: "What color is your car?",
-        },
-      ],
-      learnerTip:
-        'In German, questions about color often use the structure "Welche Farbe hat...?"',
-      isFavorite: true,
-      createdAt: new Date().toISOString(),
-    },
-  ]);
+export async function GET(request: Request) {
+  const { supabase, user, error: authError } = await getUserFromRequest(request);
+
+  if (!supabase || !user) {
+    return NextResponse.json(
+      { error: authError ?? "Login required." },
+      { status: authError === "Missing Supabase configuration." ? 500 : 401 },
+    );
+  }
+
+  const { data, error } = await supabase
+    .from("sentence_analyses")
+    .select(
+      [
+        "id",
+        "user_id",
+        "image_url",
+        "source_language",
+        "explanation_language",
+        "original_sentence",
+        "original_translation",
+        "translated_sentence",
+        "sentence_breakdown",
+        "vocabulary",
+        "grammar_points",
+        "similar_examples",
+        "learner_tip",
+        "is_favorite",
+        "created_at",
+      ].join(","),
+    )
+    .eq("is_favorite", true)
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  if (error) {
+    console.error("[favorites] Supabase read failed:", error.message);
+    return NextResponse.json(
+      { error: "Could not load favorites." },
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json(
+    ((data ?? []) as unknown as SentenceAnalysisRow[]).map(mapRowToAnalysis),
+  );
+}
+
+function mapRowToAnalysis(row: SentenceAnalysisRow) {
+  return {
+    id: row.id,
+    imageUrl: row.image_url ?? "",
+    sourceLanguage: row.source_language ?? "",
+    explanationLanguage: row.explanation_language ?? "",
+    originalSentence: row.original_sentence ?? "",
+    originalTranslation: row.original_translation ?? "",
+    translatedSentence: row.translated_sentence ?? undefined,
+    sentenceBreakdown: row.sentence_breakdown ?? [],
+    vocabulary: row.vocabulary ?? [],
+    grammarPoints: row.grammar_points ?? [],
+    similarExamples: row.similar_examples ?? [],
+    learnerTip: row.learner_tip ?? undefined,
+    isFavorite: Boolean(row.is_favorite),
+    createdAt: row.created_at ?? new Date().toISOString(),
+  };
 }
