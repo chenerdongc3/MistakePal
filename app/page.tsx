@@ -8,16 +8,30 @@ import { ChatCard } from "../components/chat-card";
 import { FavoritesList } from "../components/favorites-list";
 import { LearningSectionsCard } from "../components/learning-sections-card";
 import { OcrResultCard } from "../components/ocr-result-card";
+import { UserSettingsPanel } from "../components/user-settings-panel";
 import { createBrowserSupabaseClient, getAccessToken } from "../lib/client/supabase";
 import type {
   ChatMessage,
+  PersonalAgentConfig,
   SectionKey,
   SectionState,
   SentenceAnalysis,
+  SubscriptionPlan,
 } from "../lib/types";
 import { explanationLanguages, getUiCopy } from "../lib/ui-copy";
 
 type AuthMode = "sign-in" | "sign-up";
+type ActiveView = "learn" | "settings";
+const agentConfigStorageKey = "mistakepal-agent-config";
+const planStorageKey = "mistakepal-plan";
+const defaultAgentConfig: PersonalAgentConfig = {
+  mode: "platform",
+  provider: "gemini",
+  region: "global",
+  apiKey: "",
+  baseUrl: "https://api.openai.com/v1",
+  model: "gemini-2.5-flash",
+};
 
 export default function Home() {
   const resultRef = useRef<HTMLDivElement | null>(null);
@@ -46,7 +60,40 @@ export default function Home() {
   const [analysisStatus, setAnalysisStatus] = useState("");
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [agentConfig, setAgentConfig] =
+    useState<PersonalAgentConfig>(defaultAgentConfig);
+  const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan>("free");
+  const [activeView, setActiveView] = useState<ActiveView>("learn");
   const copy = getUiCopy(explanationLanguage);
+  const billingUrl = process.env.NEXT_PUBLIC_BILLING_URL ?? "";
+
+  useEffect(() => {
+    const storedConfig = window.localStorage.getItem(agentConfigStorageKey);
+    const storedPlan = window.localStorage.getItem(planStorageKey);
+
+    if (isSubscriptionPlan(storedPlan)) {
+      setSelectedPlan(storedPlan);
+    }
+
+    if (storedConfig) {
+      try {
+        setAgentConfig({
+          ...defaultAgentConfig,
+          ...(JSON.parse(storedConfig) as Partial<PersonalAgentConfig>),
+        });
+      } catch {
+        window.localStorage.removeItem(agentConfigStorageKey);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(agentConfigStorageKey, JSON.stringify(agentConfig));
+  }, [agentConfig]);
+
+  useEffect(() => {
+    window.localStorage.setItem(planStorageKey, selectedPlan);
+  }, [selectedPlan]);
 
   useEffect(() => {
     if (!supabaseClient) {
@@ -197,6 +244,7 @@ export default function Home() {
     setFavorites([]);
     setChatMessages([]);
     setAuthStatus("");
+    setActiveView("learn");
   }
 
   async function handleAnalyze(event: FormEvent<HTMLFormElement>) {
@@ -217,8 +265,14 @@ export default function Home() {
 
     try {
       const startedAt = performance.now();
+      const accessToken = await getAccessToken(supabaseClient);
       const response = await fetch("/api/analyze-screenshot", {
         method: "POST",
+        headers: accessToken
+          ? {
+              Authorization: `Bearer ${accessToken}`,
+            }
+          : undefined,
         body: formData,
       });
 
@@ -476,6 +530,10 @@ export default function Home() {
     return value;
   }
 
+  function isSubscriptionPlan(value: string | null): value is SubscriptionPlan {
+    return value === "free" || value === "plus" || value === "pro";
+  }
+
   function handleSelectFavorite(favorite: SentenceAnalysis) {
     setImage(null);
     setPreviewUrl("");
@@ -523,6 +581,7 @@ export default function Home() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          agentConfig,
           analysis,
           messages: nextMessages,
           explanationLanguage: analysis.explanationLanguage,
@@ -536,12 +595,16 @@ export default function Home() {
         throw new Error(errorData?.error ?? "The AI tutor could not answer.");
       }
 
-      const data = (await response.json()) as { answer: string };
+      const data = (await response.json()) as Pick<
+        ChatMessage,
+        "content" | "toolEvents"
+      > & { answer: string };
       setChatMessages([
         ...nextMessages,
         {
           role: "assistant",
           content: data.answer,
+          toolEvents: data.toolEvents,
         },
       ]);
     } catch (requestError) {
@@ -575,13 +638,30 @@ export default function Home() {
           {user ? (
             <div className="flex flex-col gap-2 text-sm text-slate-600 sm:items-end">
               <span>{user.email}</span>
-              <button
-                className="w-fit rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                onClick={handleSignOut}
-                type="button"
-              >
-                Sign out
-              </button>
+              <div className="flex flex-wrap gap-2 sm:justify-end">
+                <button
+                  className={`w-fit rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                    activeView === "settings"
+                      ? "border-blue-200 bg-blue-50 text-blue-700"
+                      : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                  onClick={() =>
+                    setActiveView((current) =>
+                      current === "settings" ? "learn" : "settings",
+                    )
+                  }
+                  type="button"
+                >
+                  我的
+                </button>
+                <button
+                  className="w-fit rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                  onClick={handleSignOut}
+                  type="button"
+                >
+                  Sign out
+                </button>
+              </div>
             </div>
           ) : null}
         </header>
@@ -599,6 +679,15 @@ export default function Home() {
             onModeChange={setAuthMode}
             onPasswordChange={setAuthPassword}
             onSubmit={handleAuth}
+          />
+        ) : activeView === "settings" ? (
+          <UserSettingsPanel
+            agentConfig={agentConfig}
+            billingUrl={billingUrl}
+            plan={selectedPlan}
+            onAgentConfigChange={setAgentConfig}
+            onBack={() => setActiveView("learn")}
+            onPlanChange={setSelectedPlan}
           />
         ) : (
           <>

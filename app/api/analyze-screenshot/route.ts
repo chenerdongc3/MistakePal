@@ -7,6 +7,7 @@ import {
 import {
   getScreenshotBucketName,
   getSupabaseAdminClient,
+  getSupabaseUserClient,
 } from "../../../lib/supabase-server";
 
 export const runtime = "nodejs";
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
       apiKey,
       image,
     });
-    const imageUrl = await uploadScreenshot(image);
+    const imageUrl = await uploadScreenshot(image, request);
     const elapsedMs = Date.now() - startedAt;
 
     console.log(
@@ -84,15 +85,29 @@ export async function POST(request: Request) {
   }
 }
 
-async function uploadScreenshot(image: File) {
-  const supabase = getSupabaseAdminClient();
+async function uploadScreenshot(image: File, request: Request) {
+  const accessToken = request.headers
+    .get("authorization")
+    ?.replace(/^Bearer\s+/i, "");
+  const userClient = accessToken ? getSupabaseUserClient(accessToken) : null;
+  const supabase = getSupabaseAdminClient() ?? userClient;
 
   if (!supabase) {
+    console.warn(
+      "[analyze-screenshot] Supabase storage upload skipped: missing service role key and user access token.",
+    );
     return null;
   }
 
+  const {
+    data: { user },
+  } = userClient
+    ? await userClient.auth.getUser(accessToken)
+    : { data: { user: null } };
+
   const extension = getFileExtension(image);
-  const path = `${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${extension}`;
+  const ownerPrefix = user?.id ?? "server";
+  const path = `${ownerPrefix}/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${extension}`;
   const bucket = getScreenshotBucketName();
   const { error } = await supabase.storage.from(bucket).upload(path, image, {
     contentType: image.type || "image/png",

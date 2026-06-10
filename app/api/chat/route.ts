@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
-import {
-  answerChatQuestion,
-  getGeminiApiKey,
-} from "../../../lib/server/gemini";
-import type { ChatMessage, SentenceAnalysis } from "../../../lib/types";
+import { runMistakePalAgent } from "../../../lib/server/agent";
+import { getGeminiApiKey } from "../../../lib/server/gemini";
+import type {
+  ChatMessage,
+  PersonalAgentConfig,
+  SentenceAnalysis,
+} from "../../../lib/types";
 
 type ChatRequest = {
+  agentConfig?: PersonalAgentConfig;
   analysis?: SentenceAnalysis;
   messages?: ChatMessage[];
   explanationLanguage?: string;
@@ -14,19 +17,22 @@ type ChatRequest = {
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const apiKey = getGeminiApiKey();
+  const body = (await request.json()) as ChatRequest;
+  const agentConfig = normalizeAgentConfig(body.agentConfig);
+  const apiKey =
+    agentConfig.mode === "personal" ? agentConfig.apiKey : getGeminiApiKey();
 
   if (!apiKey) {
     return NextResponse.json(
       {
         error:
-          "Missing GEMINI_API_KEY. Add it to .env.local and restart the dev server.",
+          agentConfig.mode === "personal"
+            ? "Personal API key is required."
+            : "Missing GEMINI_API_KEY. Add it to .env.local and restart the dev server.",
       },
-      { status: 500 },
+      { status: agentConfig.mode === "personal" ? 400 : 500 },
     );
   }
-
-  const body = (await request.json()) as ChatRequest;
 
   if (!body.analysis || !body.messages?.length) {
     return NextResponse.json(
@@ -45,17 +51,18 @@ export async function POST(request: Request) {
   }
 
   try {
-    const answer = await answerChatQuestion({
+    const result = await runMistakePalAgent({
       apiKey,
+      agentConfig,
       analysis: body.analysis,
       messages: body.messages,
       explanationLanguage:
         body.explanationLanguage ?? body.analysis.explanationLanguage,
     });
 
-    return NextResponse.json({ answer });
+    return NextResponse.json(result);
   } catch (error) {
-    console.error("[chat] Gemini chat failed:", error);
+    console.error("[chat] MistakePal agent failed:", error);
 
     return NextResponse.json(
       {
@@ -67,4 +74,32 @@ export async function POST(request: Request) {
       { status: 502 },
     );
   }
+}
+
+function normalizeAgentConfig(config?: PersonalAgentConfig): PersonalAgentConfig {
+  if (config?.mode !== "personal") {
+    return {
+      mode: "platform",
+      provider: "gemini",
+      region: "global",
+      apiKey: "",
+      baseUrl: "",
+      model: "",
+    };
+  }
+
+  return {
+    mode: "personal",
+    provider:
+      config.provider === "openai-compatible" ? "openai-compatible" : "gemini",
+    region:
+      config.region === "china" || config.region === "proxy"
+        ? config.region
+        : "global",
+    apiKey: config.apiKey.trim(),
+    baseUrl: config.baseUrl.trim(),
+    model:
+      config.model.trim() ||
+      (config.provider === "openai-compatible" ? "gpt-4o-mini" : "gemini-2.5-flash"),
+  };
 }

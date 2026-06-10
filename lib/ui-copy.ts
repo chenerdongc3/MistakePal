@@ -205,7 +205,7 @@ export function getUiCopy(language: string): UiCopy {
       askSubtitle: "趁印象还新，问一个追问。",
       askPlaceholder: "输入你关于这个句子的问题...",
       askButton: "问 AI",
-      answering: "Gemini 正在回答...",
+      answering: "AI 正在调用学习工具...",
       askEmpty: "可以问某个词为什么变形、这个短语怎么用，或者要更多例句。",
       save: "收藏",
       saved: "已收藏",
@@ -234,7 +234,7 @@ export function getUiCopy(language: string): UiCopy {
       askSubtitle: "Ask a follow-up question while the sentence is fresh.",
       askPlaceholder: "Ask a question about this sentence...",
       askButton: "Ask AI",
-      answering: "Gemini is answering...",
+      answering: "AI is using learning tools...",
       askEmpty:
         "Try asking why a word changes form, how to use the phrase, or for more examples.",
       save: "Save to Favorites",

@@ -1,0 +1,13 @@
+.agents
+.env
+.env*.local
+.git
+.next
+.next*
+Dockerfile
+docker-compose.yml
+node_modules
+npm-debug.log*
+README.md
+skills-lock.json
+tsconfig.tsbuildinfo

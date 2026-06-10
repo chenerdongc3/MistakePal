@@ -57,7 +57,29 @@ export type SentenceAnalysis = SentenceAnalysisContext & {
 export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
+  toolEvents?: LearningToolEvent[];
 };
+
+export type LearningToolEvent = {
+  name: string;
+  label: string;
+  status: "completed" | "failed";
+};
+
+export type PersonalAgentProvider = "gemini" | "openai-compatible";
+
+export type PersonalAgentRegion = "global" | "china" | "proxy";
+
+export type PersonalAgentConfig = {
+  mode: "platform" | "personal";
+  provider: PersonalAgentProvider;
+  region: PersonalAgentRegion;
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+};
+
+export type SubscriptionPlan = "free" | "plus" | "pro";
 
 export type SectionState = {
   isLoading: boolean;
