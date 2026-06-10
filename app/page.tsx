@@ -33,7 +33,7 @@ import type {
 import { explanationLanguages, getUiCopy } from "../lib/ui-copy";
 
 type AuthMode = "sign-in" | "sign-up";
-type ActiveView = "learn" | "settings";
+type ActiveView = "learn" | "favorites" | "settings";
 const agentConfigStorageKey = "mistakepal-agent-config";
 const agentConfigMetadataKey = "mistakepalAgentConfig";
 const planStorageKey = "mistakepal-plan";
@@ -64,6 +64,8 @@ export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
+  const [authVerificationCode, setAuthVerificationCode] = useState("");
+  const [isVerificationPending, setIsVerificationPending] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>("sign-in");
   const [authStatus, setAuthStatus] = useState("");
   const [isAuthLoading, setIsAuthLoading] = useState(true);
@@ -97,7 +99,12 @@ export default function Home() {
   );
   const copy = getUiCopy(explanationLanguage);
   const billingUrl = process.env.NEXT_PUBLIC_BILLING_URL ?? "";
-  const activeView: ActiveView = pathname === "/settings" ? "settings" : "learn";
+  const activeView: ActiveView =
+    pathname === "/settings"
+      ? "settings"
+      : pathname === "/favorites"
+        ? "favorites"
+        : "learn";
 
   useEffect(() => {
     const storedConfig = window.localStorage.getItem(agentConfigStorageKey);
@@ -378,7 +385,7 @@ export default function Home() {
       }
 
       const data = (await response.json()) as SentenceAnalysis[];
-      setFavorites(data.slice(0, 5));
+      setFavorites(data);
     } catch {
       setFavorites([]);
     }
@@ -482,54 +489,169 @@ export default function Home() {
     event.preventDefault();
     setError("");
     setAuthStatus("");
+    setAuthVerificationCode("");
 
     if (!supabaseClient) {
       setError("Missing Supabase public configuration.");
       return;
     }
 
+    if (!authEmail.trim()) {
+      setError("Enter your email.");
+      return;
+    }
+
+    if (!authPassword) {
+      setError("Enter your password.");
+      return;
+    }
+
     setIsAuthLoading(true);
 
     try {
-      const authCall =
-        authMode === "sign-in"
-          ? supabaseClient.auth.signInWithPassword({
-              email: authEmail,
-              password: authPassword,
-            })
-          : supabaseClient.auth.signUp({
-              email: authEmail,
-              password: authPassword,
-            });
+      if (authMode === "sign-in") {
+        const { data, error: signInError } =
+          await supabaseClient.auth.signInWithPassword({
+            email: authEmail,
+            password: authPassword,
+          });
 
-      const { data, error: authError } = await authCall;
+        if (signInError) {
+          throw signInError;
+        }
 
-      if (authError) {
-        throw authError;
+        if (data.user) {
+          setUser(data.user);
+        }
+
+        setAuthStatus("Signed in.");
+        return;
+      }
+
+      const { data, error: signUpError } = await supabaseClient.auth.signUp({
+        email: authEmail,
+        password: authPassword,
+      });
+
+      if (signUpError) {
+        throw signUpError;
       }
 
       if (data.session?.user) {
         setUser(data.user);
+        setAuthStatus("Account created and signed in.");
+        return;
       }
 
-      if (authMode === "sign-up") {
-        if (data.session) {
-          setAuthStatus("Account created and signed in.");
-        } else {
-          setAuthMode("sign-in");
-          setAuthPassword("");
-          setAuthStatus(
-            "Account created. Please check your email if confirmation is required, then sign in.",
-          );
-        }
-      } else {
-        setAuthStatus("Signed in.");
-      }
+      setIsVerificationPending(true);
+      setAuthStatus("Verification code sent. Check your email to finish registration.");
     } catch (requestError) {
       setError(
         requestError instanceof Error
           ? requestError.message
           : "Authentication failed.",
+      );
+    } finally {
+      setIsAuthLoading(false);
+    }
+  }
+
+  function handleAuthModeChange(nextMode: AuthMode) {
+    setAuthMode(nextMode);
+    setIsVerificationPending(false);
+    setAuthVerificationCode("");
+    setAuthStatus("");
+    setError("");
+  }
+
+  function handleUseAnotherEmail() {
+    setIsVerificationPending(false);
+    setAuthVerificationCode("");
+    setAuthStatus("");
+    setError("");
+  }
+
+  async function resendSignupVerificationCode(email: string) {
+    if (!supabaseClient) {
+      throw new Error("Missing Supabase public configuration.");
+    }
+
+    const { error: resendError } = await supabaseClient.auth.resend({
+      type: "signup",
+      email,
+    });
+
+    if (resendError) {
+      throw resendError;
+    }
+  }
+
+  async function handleResendVerification() {
+    setError("");
+    setAuthStatus("");
+
+    if (!authEmail) {
+      setError("Enter your email before requesting a verification code.");
+      return;
+    }
+
+    setIsAuthLoading(true);
+
+    try {
+      await resendSignupVerificationCode(authEmail);
+      setAuthStatus("A new verification code was sent.");
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Could not send verification code.",
+      );
+    } finally {
+      setIsAuthLoading(false);
+    }
+  }
+
+  async function handleVerifyEmail(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setAuthStatus("");
+
+    if (!supabaseClient) {
+      setError("Missing Supabase public configuration.");
+      return;
+    }
+
+    if (!authVerificationCode.trim()) {
+      setError("Enter the verification code from your email.");
+      return;
+    }
+
+    setIsAuthLoading(true);
+
+    try {
+      const { data, error: verifyError } = await supabaseClient.auth.verifyOtp({
+        email: authEmail,
+        token: authVerificationCode.trim(),
+        type: "email",
+      });
+
+      if (verifyError) {
+        throw verifyError;
+      }
+
+      if (data.user) {
+        setUser(data.user);
+      }
+
+      setIsVerificationPending(false);
+      setAuthVerificationCode("");
+      setAuthPassword("");
+      setAuthStatus("Signed in.");
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Email verification failed.",
       );
     } finally {
       setIsAuthLoading(false);
@@ -543,6 +665,8 @@ export default function Home() {
 
     await supabaseClient.auth.signOut();
     setUser(null);
+    setIsVerificationPending(false);
+    setAuthVerificationCode("");
     setAnalysis(null);
     setFavorites([]);
     setChatMessages([]);
@@ -777,7 +901,7 @@ export default function Home() {
         const withoutDuplicate = currentFavorites.filter(
           (favorite) => favorite.id !== analysis.id,
         );
-        return [nextFavorite, ...withoutDuplicate].slice(0, 5);
+        return [nextFavorite, ...withoutDuplicate];
       });
       return nextFavorite;
     } catch (requestError) {
@@ -1045,6 +1169,7 @@ export default function Home() {
 
   function handleSelectFavorite(favorite: SentenceAnalysis) {
     handleSelectAnalysis(favorite);
+    router.push("/learn");
   }
 
   function handleSelectAnalysis(nextAnalysis: SentenceAnalysis) {
@@ -1267,26 +1392,23 @@ export default function Home() {
             <div className="flex flex-col gap-2 text-sm text-slate-600 sm:items-end">
               <span>{user.email}</span>
               <div className="flex flex-wrap gap-2 sm:justify-end">
-                <Link
-                  className={`inline-flex h-10 w-fit items-center justify-center rounded-md border px-3 py-2 text-sm font-medium transition ${
-                    activeView === "learn"
-                      ? "border-blue-200 bg-blue-50 text-blue-700"
-                      : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-                  }`}
-                  href="/learn"
-                >
-                  学习
-                </Link>
-                <Link
-                  className={`inline-flex h-10 w-fit items-center justify-center rounded-md border px-3 py-2 text-sm font-medium transition ${
-                    activeView === "settings"
-                      ? "border-blue-200 bg-blue-50 text-blue-700"
-                      : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-                  }`}
-                  href="/settings"
-                >
-                  我的
-                </Link>
+                {[
+                  { href: "/learn", label: "学习", view: "learn" },
+                  { href: "/favorites", label: "收藏", view: "favorites" },
+                  { href: "/settings", label: "我的", view: "settings" },
+                ].map((item) => (
+                  <Link
+                    className={`inline-flex h-10 w-fit items-center justify-center rounded-md border px-3 py-2 text-sm font-medium transition ${
+                      activeView === item.view
+                        ? "border-blue-200 bg-blue-50 text-blue-700"
+                        : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                    href={item.href}
+                    key={item.href}
+                  >
+                    {item.label}
+                  </Link>
+                ))}
                 <Button
                   className="w-fit"
                   onClick={handleSignOut}
@@ -1306,13 +1428,19 @@ export default function Home() {
             authMode={authMode}
             authPassword={authPassword}
             authStatus={authStatus}
+            authVerificationCode={authVerificationCode}
             error={error}
             isAuthLoading={isAuthLoading}
+            isVerificationPending={isVerificationPending}
             isConfigured={Boolean(supabaseClient)}
             onEmailChange={setAuthEmail}
-            onModeChange={setAuthMode}
+            onModeChange={handleAuthModeChange}
             onPasswordChange={setAuthPassword}
+            onResendVerification={handleResendVerification}
             onSubmit={handleAuth}
+            onUseAnotherEmail={handleUseAnotherEmail}
+            onVerificationCodeChange={setAuthVerificationCode}
+            onVerifyEmail={handleVerifyEmail}
           />
         ) : activeView === "settings" ? (
           <UserSettingsPanel
@@ -1328,6 +1456,19 @@ export default function Home() {
             onCheckout={handleCheckout}
             onPlanChange={setSelectedPlan}
           />
+        ) : activeView === "favorites" ? (
+          <>
+            {error ? (
+              <Alert variant="destructive">{error}</Alert>
+            ) : null}
+            <FavoritesList
+              copy={copy}
+              deletingFavoriteId={deletingFavoriteId}
+              favorites={favorites}
+              onDeleteFavorite={handleDeleteFavorite}
+              onSelectFavorite={handleSelectFavorite}
+            />
+          </>
         ) : (
           <>
             <MultiImageUploadCard
@@ -1401,13 +1542,6 @@ export default function Home() {
               </Card>
             )}
 
-            <FavoritesList
-              copy={copy}
-              deletingFavoriteId={deletingFavoriteId}
-              favorites={favorites}
-              onDeleteFavorite={handleDeleteFavorite}
-              onSelectFavorite={handleSelectFavorite}
-            />
             <RecentAnalysesList
               analyses={recentAnalyses}
               onSelectAnalysis={handleSelectAnalysis}

@@ -39,8 +39,7 @@ export async function GET(request: Request) {
     )
     .eq("is_favorite", true)
     .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(5);
+    .order("created_at", { ascending: false });
 
   if (error) {
     console.error("[favorites] Supabase read failed:", error.message);
