@@ -77,7 +77,7 @@ function OnDemandSection({
             ? copy.analyzingSection
             : hasContent
               ? copy.refreshSection
-              : copy.analyzeSection}
+              : getSectionActionLabel(section.key, copy.language)}
         </button>
       </div>
 
@@ -90,6 +90,32 @@ function OnDemandSection({
       {hasContent ? <div className="mt-4">{content}</div> : null}
     </div>
   );
+}
+
+function getSectionActionLabel(section: SectionKey, language: string) {
+  if (language === "Chinese") {
+    const labels: Record<SectionKey, string> = {
+      translation: "查看翻译",
+      breakdown: "看句子拆解",
+      vocabulary: "学重点单词",
+      grammar: "看语法点",
+      examples: "生成相似例句",
+      tip: "给我复习建议",
+    };
+
+    return labels[section];
+  }
+
+  const labels: Record<SectionKey, string> = {
+    translation: "View translation",
+    breakdown: "Break down sentence",
+    vocabulary: "Study vocabulary",
+    grammar: "View grammar",
+    examples: "Generate examples",
+    tip: "Get review tip",
+  };
+
+  return labels[section];
 }
 
 function getSectionContent(analysis: SentenceAnalysis, section: SectionKey) {

@@ -14,8 +14,10 @@ export type SentenceAnalysisRow = {
   grammar_points: unknown;
   similar_examples: unknown;
   learner_tip: string | null;
+  chat_messages?: unknown;
   is_favorite: boolean | null;
   created_at: string | null;
+  updated_at?: string | null;
 };
 
 export function getSupabaseAdminClient() {

@@ -24,6 +24,12 @@ type AuthMode = "sign-in" | "sign-up";
 type ActiveView = "learn" | "settings";
 const agentConfigStorageKey = "mistakepal-agent-config";
 const planStorageKey = "mistakepal-plan";
+const maxScreenshotSizeBytes = 8 * 1024 * 1024;
+const allowedScreenshotTypes = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+]);
 const defaultAgentConfig: PersonalAgentConfig = {
   mode: "platform",
   provider: "gemini",
@@ -136,7 +142,21 @@ export default function Home() {
   }, [image]);
 
   function handleImageChange(event: ChangeEvent<HTMLInputElement>) {
-    setImage(event.target.files?.[0] ?? null);
+    const nextImage = event.target.files?.[0] ?? null;
+
+    if (nextImage) {
+      const validationError = validateScreenshot(nextImage);
+
+      if (validationError) {
+        event.target.value = "";
+        setImage(null);
+        resetCurrentAnalysis();
+        setError(validationError);
+        return;
+      }
+    }
+
+    setImage(nextImage);
     resetCurrentAnalysis();
   }
 
@@ -147,6 +167,66 @@ export default function Home() {
     setChatInput("");
     setChatMessages([]);
     setError("");
+  }
+
+  function validateScreenshot(file: File) {
+    if (!allowedScreenshotTypes.has(file.type)) {
+      return "Please upload a PNG, JPG, JPEG, or WEBP screenshot.";
+    }
+
+    if (file.size > maxScreenshotSizeBytes) {
+      return "Screenshot is too large. Please upload an image under 8MB.";
+    }
+
+    return "";
+  }
+
+  function getUserFacingErrorMessage(
+    errorValue: unknown,
+    context: "ocr" | "favorite" | "save" | "chat",
+  ) {
+    const message =
+      errorValue instanceof Error ? errorValue.message : String(errorValue ?? "");
+
+    if (message.toLowerCase().includes("login") || message.includes("401")) {
+      return "Your login session expired. Please sign in again.";
+    }
+
+    if (
+      message.toLowerCase().includes("missing gemini") ||
+      message.toLowerCase().includes("api key")
+    ) {
+      return "AI is not configured. Add an API key in Settings or configure the server key.";
+    }
+
+    if (
+      message.toLowerCase().includes("too many") ||
+      message.toLowerCase().includes("rate")
+    ) {
+      return "You are making requests too quickly. Please wait a moment and try again.";
+    }
+
+    if (
+      message.toLowerCase().includes("read the screenshot") ||
+      message.toLowerCase().includes("ocr") ||
+      context === "ocr"
+    ) {
+      return "The screenshot could not be read. Please upload a clearer Duolingo screenshot.";
+    }
+
+    if (context === "favorite") {
+      return "Favorite could not be saved. Please check your login and try again.";
+    }
+
+    if (context === "chat") {
+      return "AI tutor is temporarily unavailable. Please try again in a moment.";
+    }
+
+    if (context === "save") {
+      return "Changes could not be saved. Please try again.";
+    }
+
+    return "Something went wrong. Please try again.";
   }
 
   async function fetchFavorites() {
@@ -286,7 +366,14 @@ export default function Home() {
       }
 
       const data = (await response.json()) as SentenceAnalysis;
-      setAnalysis(data);
+      const persisted = await persistAnalysis(data, {
+        includeImage: true,
+        sourceImage: image,
+      }).catch((persistError) => {
+        setError(getUserFacingErrorMessage(persistError, "save"));
+        return null;
+      });
+      setAnalysis(persisted ?? data);
       setSectionStates({});
       setChatMessages([]);
       setChatInput("");
@@ -296,11 +383,7 @@ export default function Home() {
           : copy.ocrDone(((performance.now() - startedAt) / 1000).toFixed(1)),
       );
     } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Something went wrong. Please try again.",
-      );
+      setError(getUserFacingErrorMessage(requestError, "ocr"));
       setAnalysisStatus("");
     } finally {
       setIsAnalyzing(false);
@@ -350,16 +433,14 @@ export default function Home() {
       };
 
       setAnalysis(nextAnalysis);
-      if (nextAnalysis.isFavorite) {
-        setFavorites((currentFavorites) =>
-          currentFavorites.map((favorite) =>
-            favorite.id === nextAnalysis.id ? nextAnalysis : favorite,
-          ),
-        );
-        persistFavorite(nextAnalysis).catch((persistError) => {
-          console.warn("[favorite] Could not update cached analysis:", persistError);
-        });
-      }
+      persistAnalysis(nextAnalysis).catch((persistError) => {
+        console.warn("[analysis] Could not persist section result:", persistError);
+      });
+      setFavorites((currentFavorites) =>
+        currentFavorites.map((favorite) =>
+          favorite.id === nextAnalysis.id ? nextAnalysis : favorite,
+        ),
+      );
       setSectionStates((current) => ({
         ...current,
         [section]: {
@@ -374,7 +455,7 @@ export default function Home() {
           error:
             requestError instanceof Error
               ? requestError.message
-              : "Something went wrong.",
+              : "AI service failed. Please try again.",
         },
       }));
     }
@@ -395,15 +476,21 @@ export default function Home() {
         throw new Error("Please sign in before saving favorites.");
       }
 
+      const favoriteBody = buildFavoriteRequestBody(analysis);
       const response = await fetch(
         `/api/sentence-analyses/${analysis.id}/favorite`,
         {
           method: "PATCH",
           headers: {
             Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
+            ...(favoriteBody instanceof FormData
+              ? {}
+              : { "Content-Type": "application/json" }),
           },
-          body: JSON.stringify(buildFavoritePayload(analysis)),
+          body:
+            favoriteBody instanceof FormData
+              ? favoriteBody
+              : JSON.stringify(favoriteBody),
         },
       );
 
@@ -416,12 +503,16 @@ export default function Home() {
 
       const updated = (await response.json()) as {
         createdAt?: string;
+        imageUrl?: string;
         isFavorite: boolean;
+        updatedAt?: string;
       };
       const nextFavorite = {
         ...analysis,
         createdAt: updated.createdAt ?? analysis.createdAt,
+        imageUrl: updated.imageUrl ?? analysis.imageUrl,
         isFavorite: updated.isFavorite,
+        updatedAt: updated.updatedAt ?? analysis.updatedAt,
       };
       setAnalysis(nextFavorite);
       setFavorites((currentFavorites) => {
@@ -432,9 +523,7 @@ export default function Home() {
       });
     } catch (requestError) {
       setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Something went wrong. Please try again.",
+        getUserFacingErrorMessage(requestError, "favorite"),
       );
     } finally {
       setIsSavingFavorite(false);
@@ -474,9 +563,7 @@ export default function Home() {
       );
     } catch (requestError) {
       setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Something went wrong. Please try again.",
+        getUserFacingErrorMessage(requestError, "favorite"),
       );
     } finally {
       setDeletingFavoriteId("");
@@ -496,13 +583,64 @@ export default function Home() {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(buildFavoritePayload(nextAnalysis)),
+      body: JSON.stringify(buildAnalysisPayload(nextAnalysis)),
     });
   }
 
-  function buildFavoritePayload(nextAnalysis: SentenceAnalysis) {
+  async function persistAnalysis(
+    nextAnalysis: SentenceAnalysis,
+    options?: {
+      includeImage?: boolean;
+      sourceImage?: File | null;
+    },
+  ) {
+    const accessToken = await getAccessToken(supabaseClient);
+
+    if (!accessToken) {
+      return null;
+    }
+
+    const requestBody = buildAnalysisRequestBody(nextAnalysis, options);
+    const response = await fetch(`/api/sentence-analyses/${nextAnalysis.id}`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        ...(requestBody instanceof FormData
+          ? {}
+          : { "Content-Type": "application/json" }),
+      },
+      body:
+        requestBody instanceof FormData
+          ? requestBody
+          : JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      throw new Error(errorData?.error ?? "Could not save this analysis.");
+    }
+
+    const updated = (await response.json()) as {
+      createdAt?: string;
+      imageUrl?: string;
+      isFavorite?: boolean;
+      updatedAt?: string;
+    };
+
     return {
-      isFavorite: true,
+      ...nextAnalysis,
+      createdAt: updated.createdAt ?? nextAnalysis.createdAt,
+      imageUrl: updated.imageUrl ?? nextAnalysis.imageUrl,
+      isFavorite: updated.isFavorite ?? nextAnalysis.isFavorite,
+      updatedAt: updated.updatedAt ?? nextAnalysis.updatedAt,
+    };
+  }
+
+  function buildAnalysisPayload(nextAnalysis: SentenceAnalysis) {
+    return {
+      isFavorite: nextAnalysis.isFavorite,
       imageUrl: getPersistentImageUrl(nextAnalysis.imageUrl),
       sourceLanguage: nextAnalysis.sourceLanguage,
       explanationLanguage: nextAnalysis.explanationLanguage,
@@ -514,7 +652,82 @@ export default function Home() {
       grammarPoints: nextAnalysis.grammarPoints ?? [],
       similarExamples: nextAnalysis.similarExamples ?? [],
       learnerTip: nextAnalysis.learnerTip,
+      chatMessages: nextAnalysis.chatMessages ?? chatMessages,
     };
+  }
+
+  function buildFavoriteRequestBody(nextAnalysis: SentenceAnalysis) {
+    const payload = {
+      ...buildAnalysisPayload(nextAnalysis),
+      isFavorite: true,
+    };
+
+    if (payload.imageUrl || !image) {
+      return payload;
+    }
+
+    const formData = new FormData();
+    formData.append("image", image);
+    formData.append("isFavorite", String(payload.isFavorite));
+    formData.append("imageUrl", payload.imageUrl);
+    formData.append("sourceLanguage", payload.sourceLanguage);
+    formData.append("explanationLanguage", payload.explanationLanguage);
+    formData.append("originalSentence", payload.originalSentence);
+    formData.append("originalTranslation", payload.originalTranslation);
+    formData.append("translatedSentence", payload.translatedSentence ?? "");
+    formData.append(
+      "sentenceBreakdown",
+      JSON.stringify(payload.sentenceBreakdown),
+    );
+    formData.append("vocabulary", JSON.stringify(payload.vocabulary));
+    formData.append("grammarPoints", JSON.stringify(payload.grammarPoints));
+    formData.append(
+      "similarExamples",
+      JSON.stringify(payload.similarExamples),
+    );
+    formData.append("learnerTip", payload.learnerTip ?? "");
+    formData.append("chatMessages", JSON.stringify(payload.chatMessages));
+
+    return formData;
+  }
+
+  function buildAnalysisRequestBody(
+    nextAnalysis: SentenceAnalysis,
+    options?: {
+      includeImage?: boolean;
+      sourceImage?: File | null;
+    },
+  ) {
+    const payload = buildAnalysisPayload(nextAnalysis);
+    const sourceImage = options?.sourceImage ?? image;
+
+    if (payload.imageUrl || !options?.includeImage || !sourceImage) {
+      return payload;
+    }
+
+    const formData = new FormData();
+    formData.append("image", sourceImage);
+    formData.append("isFavorite", String(payload.isFavorite));
+    formData.append("imageUrl", payload.imageUrl);
+    formData.append("sourceLanguage", payload.sourceLanguage);
+    formData.append("explanationLanguage", payload.explanationLanguage);
+    formData.append("originalSentence", payload.originalSentence);
+    formData.append("originalTranslation", payload.originalTranslation);
+    formData.append("translatedSentence", payload.translatedSentence ?? "");
+    formData.append(
+      "sentenceBreakdown",
+      JSON.stringify(payload.sentenceBreakdown),
+    );
+    formData.append("vocabulary", JSON.stringify(payload.vocabulary));
+    formData.append("grammarPoints", JSON.stringify(payload.grammarPoints));
+    formData.append(
+      "similarExamples",
+      JSON.stringify(payload.similarExamples),
+    );
+    formData.append("learnerTip", payload.learnerTip ?? "");
+    formData.append("chatMessages", JSON.stringify(payload.chatMessages));
+
+    return formData;
   }
 
   function getPersistentImageUrl(value: string) {
@@ -542,7 +755,7 @@ export default function Home() {
     setSectionStates({});
     setAnalysisStatus("");
     setChatInput("");
-    setChatMessages([]);
+    setChatMessages(favorite.chatMessages ?? []);
     setError("");
 
     window.setTimeout(() => {
@@ -551,6 +764,38 @@ export default function Home() {
         block: "start",
       });
     }, 0);
+  }
+
+  function handleUpdateOcr(nextValues: {
+    originalSentence: string;
+    originalTranslation: string;
+  }) {
+    if (!analysis) {
+      return;
+    }
+
+    const nextAnalysis: SentenceAnalysis = {
+      ...analysis,
+      originalSentence: nextValues.originalSentence,
+      originalTranslation: nextValues.originalTranslation,
+      translatedSentence: undefined,
+      sentenceBreakdown: [],
+      vocabulary: [],
+      grammarPoints: [],
+      similarExamples: [],
+      learnerTip: undefined,
+    };
+
+    setAnalysis(nextAnalysis);
+    setFavorites((currentFavorites) =>
+      currentFavorites.map((favorite) =>
+        favorite.id === nextAnalysis.id ? nextAnalysis : favorite,
+      ),
+    );
+    setSectionStates({});
+    persistAnalysis(nextAnalysis).catch((persistError) => {
+      setError(getUserFacingErrorMessage(persistError, "save"));
+    });
   }
 
   async function handleAskQuestion(event: FormEvent<HTMLFormElement>) {
@@ -599,19 +844,33 @@ export default function Home() {
         ChatMessage,
         "content" | "toolEvents"
       > & { answer: string };
-      setChatMessages([
+      const nextChatMessages: ChatMessage[] = [
         ...nextMessages,
         {
           role: "assistant",
           content: data.answer,
           toolEvents: data.toolEvents,
         },
-      ]);
+      ];
+      setChatMessages(nextChatMessages);
+      if (analysis.isFavorite) {
+        setFavorites((currentFavorites) =>
+          currentFavorites.map((favorite) =>
+            favorite.id === analysis.id
+              ? { ...analysis, chatMessages: nextChatMessages }
+              : favorite,
+          ),
+        );
+      }
+      persistAnalysis({
+        ...analysis,
+        chatMessages: nextChatMessages,
+      }).catch((persistError) => {
+        console.warn("[analysis] Could not persist chat messages:", persistError);
+      });
     } catch (requestError) {
       setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Something went wrong. Please try again.",
+        getUserFacingErrorMessage(requestError, "chat"),
       );
     } finally {
       setIsChatLoading(false);
@@ -722,7 +981,17 @@ export default function Home() {
                     type="file"
                     onChange={handleImageChange}
                   />
+                  <span className="block text-xs leading-5 text-slate-500">
+                    PNG, JPG, JPEG, or WEBP. Maximum 8MB. Use a clear screenshot
+                    with the target sentence and English translation visible.
+                  </span>
                 </label>
+
+                <div className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 sm:grid-cols-3">
+                  <span>1. Read screenshot</span>
+                  <span>2. Extract sentence</span>
+                  <span>3. Learn grammar, words, examples</span>
+                </div>
 
                 {previewUrl ? (
                   <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
@@ -763,6 +1032,7 @@ export default function Home() {
                   analysis={analysis}
                   copy={copy}
                   isSavingFavorite={isSavingFavorite}
+                  onUpdateOcr={handleUpdateOcr}
                   onSaveFavorite={handleSaveFavorite}
                 />
                 <LearningSectionsCard
@@ -772,6 +1042,7 @@ export default function Home() {
                   onAnalyzeSection={handleAnalyzeSection}
                 />
                 <ChatCard
+                  contextSentence={analysis.originalSentence}
                   chatInput={chatInput}
                   copy={copy}
                   isChatLoading={isChatLoading}

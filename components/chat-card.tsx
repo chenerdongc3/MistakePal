@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ChatMessage, UiCopy } from "../lib/types";
 
 export function ChatCard({
+  contextSentence,
   chatInput,
   copy,
   isChatLoading,
@@ -10,6 +11,7 @@ export function ChatCard({
   onInputChange,
   onSubmit,
 }: {
+  contextSentence: string;
   chatInput: string;
   copy: UiCopy;
   isChatLoading: boolean;
@@ -63,7 +65,7 @@ export function ChatCard({
                 {copy.askTitle}
               </h2>
               <p className="mt-0.5 truncate text-sm text-slate-500">
-                {copy.askSubtitle}
+                Ask about: {truncateSentence(contextSentence)}
               </p>
             </div>
             <button
@@ -155,4 +157,8 @@ export function ChatCard({
       </button>
     </div>
   );
+}
+
+function truncateSentence(value: string) {
+  return value.length > 44 ? `${value.slice(0, 44)}...` : value;
 }

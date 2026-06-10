@@ -31,8 +31,10 @@ export async function GET(request: Request) {
         "grammar_points",
         "similar_examples",
         "learner_tip",
+        "chat_messages",
         "is_favorite",
         "created_at",
+        "updated_at",
       ].join(","),
     )
     .eq("is_favorite", true)
@@ -67,7 +69,9 @@ function mapRowToAnalysis(row: SentenceAnalysisRow) {
     grammarPoints: row.grammar_points ?? [],
     similarExamples: row.similar_examples ?? [],
     learnerTip: row.learner_tip ?? undefined,
+    chatMessages: Array.isArray(row.chat_messages) ? row.chat_messages : [],
     isFavorite: Boolean(row.is_favorite),
     createdAt: row.created_at ?? new Date().toISOString(),
+    updatedAt: row.updated_at ?? undefined,
   };
 }

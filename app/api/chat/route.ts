@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { runMistakePalAgent } from "../../../lib/server/agent";
 import { getGeminiApiKey } from "../../../lib/server/gemini";
+import { checkRateLimit } from "../../../lib/server/rate-limit";
 import type {
   ChatMessage,
   PersonalAgentConfig,
@@ -17,6 +18,23 @@ type ChatRequest = {
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  const rateLimit = checkRateLimit({
+    limit: 80,
+    request,
+    windowMs: 10 * 60 * 1000,
+  });
+
+  if (rateLimit) {
+    return NextResponse.json(
+      {
+        error: "Too many chat requests. Please try again later.",
+        code: "RATE_LIMITED",
+        retryAfterSeconds: rateLimit.retryAfterSeconds,
+      },
+      { status: 429 },
+    );
+  }
+
   const body = (await request.json()) as ChatRequest;
   const agentConfig = normalizeAgentConfig(body.agentConfig);
   const apiKey =
@@ -29,6 +47,7 @@ export async function POST(request: Request) {
           agentConfig.mode === "personal"
             ? "Personal API key is required."
             : "Missing GEMINI_API_KEY. Add it to .env.local and restart the dev server.",
+        code: agentConfig.mode === "personal" ? "PERSONAL_API_KEY_REQUIRED" : "AI_NOT_CONFIGURED",
       },
       { status: agentConfig.mode === "personal" ? 400 : 500 },
     );
@@ -36,7 +55,10 @@ export async function POST(request: Request) {
 
   if (!body.analysis || !body.messages?.length) {
     return NextResponse.json(
-      { error: "Analysis context and at least one message are required." },
+      {
+        error: "Analysis context and at least one message are required.",
+        code: "BAD_REQUEST",
+      },
       { status: 400 },
     );
   }
@@ -45,7 +67,7 @@ export async function POST(request: Request) {
 
   if (latestQuestion.role !== "user" || !latestQuestion.content.trim()) {
     return NextResponse.json(
-      { error: "The latest message must be a user question." },
+      { error: "The latest message must be a user question.", code: "BAD_REQUEST" },
       { status: 400 },
     );
   }
@@ -70,6 +92,7 @@ export async function POST(request: Request) {
           error instanceof Error
             ? error.message
             : "The AI tutor could not answer.",
+        code: "AI_CHAT_FAILED",
       },
       { status: 502 },
     );

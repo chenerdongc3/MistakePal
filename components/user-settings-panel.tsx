@@ -16,12 +16,12 @@ const planOptions: {
   {
     id: "plus",
     name: "Plus",
-    description: "适合更频繁学习，后续可接平台额度或订阅能力。",
+    description: "Coming soon。后续用于更高平台额度和订阅能力。",
   },
   {
     id: "pro",
     name: "Pro",
-    description: "适合重度学习和自带 API Key 的高级使用方式。",
+    description: "Coming soon。后续用于高级学习能力和团队场景。",
   },
 ];
 
@@ -174,6 +174,11 @@ export function UserSettingsPanel({
                   >
                     {option.name}
                   </span>
+                  {option.id !== "free" ? (
+                    <span className="mt-2 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                      Coming soon
+                    </span>
+                  ) : null}
                   <span className="mt-2 block text-sm leading-6 text-slate-600">
                     {option.description}
                   </span>

@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { SentenceAnalysis, UiCopy } from "../lib/types";
 
 export function FavoritesList({
@@ -16,7 +15,10 @@ export function FavoritesList({
 }) {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-      <h2 className="text-lg font-semibold">{copy.favorites}</h2>
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <h2 className="text-lg font-semibold">{copy.favorites}</h2>
+        <p className="text-xs text-slate-500">Showing latest 5 for now.</p>
+      </div>
       {favorites.length > 0 ? (
         <div className="mt-4 space-y-3">
           {favorites.map((favorite) => (
@@ -26,22 +28,19 @@ export function FavoritesList({
             >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                 <button
-                  className="flex min-w-0 flex-1 flex-col gap-3 text-left sm:flex-row sm:items-start"
+                  className="min-w-0 flex-1 text-left"
                   onClick={() => onSelectFavorite(favorite)}
                   type="button"
                 >
-                  <FavoriteThumbnail favorite={favorite} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-slate-950">
-                      {favorite.originalSentence}
-                    </p>
-                    <p className="mt-1 text-sm text-slate-600">
-                      {favorite.translatedSentence ?? favorite.originalTranslation}
-                    </p>
-                    <p className="mt-2 text-xs font-medium text-blue-700">
-                      Open saved analysis
-                    </p>
-                  </div>
+                  <p className="text-sm font-medium text-slate-950">
+                    {favorite.originalSentence}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {favorite.translatedSentence ?? favorite.originalTranslation}
+                  </p>
+                  <p className="mt-2 text-xs font-medium text-blue-700">
+                    Open saved analysis
+                  </p>
                 </button>
                 <div className="flex flex-wrap gap-2 text-xs text-slate-500 sm:justify-end">
                   <span>{favorite.sourceLanguage}</span>
@@ -65,45 +64,6 @@ export function FavoritesList({
       )}
     </section>
   );
-}
-
-function FavoriteThumbnail({ favorite }: { favorite: SentenceAnalysis }) {
-  const [hasLoadError, setHasLoadError] = useState(false);
-  const canRenderImage = isRenderableImageUrl(favorite.imageUrl) && !hasLoadError;
-
-  return (
-    <div className="flex h-20 w-full shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-white sm:w-20">
-      {canRenderImage ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          alt={favorite.originalSentence}
-          className="h-full w-full object-cover"
-          src={favorite.imageUrl}
-          onError={() => setHasLoadError(true)}
-        />
-      ) : (
-        <div className="flex h-full w-full items-center justify-center bg-slate-100 px-3 text-center text-[11px] font-medium leading-4 text-slate-500">
-          Screenshot unavailable
-        </div>
-      )}
-    </div>
-  );
-}
-
-function isRenderableImageUrl(value: string) {
-  if (!value) {
-    return false;
-  }
-
-  if (
-    value.startsWith("blob:") ||
-    value.startsWith("file:") ||
-    value.startsWith("/mock-uploads/")
-  ) {
-    return false;
-  }
-
-  return value.startsWith("http://") || value.startsWith("https://");
 }
 
 function formatDate(value: string) {

@@ -2,7 +2,17 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const isDebug = url.searchParams.get("debug") === "1";
+
+  if (!isDebug) {
+    return NextResponse.json({
+      status: "ok",
+      service: "mistakepal",
+    });
+  }
+
   return NextResponse.json({
     status: "ok",
     service: "mistakepal",

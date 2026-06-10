@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
-import { uploadScreenshot } from "../../../../../lib/server/screenshot-storage";
-import { getUserFromRequest } from "../../../../../lib/supabase-server";
+import { uploadScreenshot } from "../../../../lib/server/screenshot-storage";
+import { getUserFromRequest } from "../../../../lib/supabase-server";
 
-type FavoriteBody = {
-  isFavorite?: boolean;
+type AnalysisBody = {
   image?: File;
   imageUrl?: string;
   sourceLanguage?: string;
@@ -17,6 +16,7 @@ type FavoriteBody = {
   similarExamples?: unknown;
   learnerTip?: string;
   chatMessages?: unknown;
+  isFavorite?: boolean;
 };
 
 export async function PATCH(
@@ -24,15 +24,12 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const body = await parseFavoriteBody(request);
-  const isFavorite = body.isFavorite ?? true;
+  const body = await parseAnalysisBody(request);
   const { supabase, user, error: authError } = await getUserFromRequest(request);
 
   if (!supabase || !user) {
     return NextResponse.json(
-      {
-        error: authError ?? "Login required.",
-      },
+      { error: authError ?? "Login required.", code: "AUTH_REQUIRED" },
       { status: authError === "Missing Supabase configuration." ? 500 : 401 },
     );
   }
@@ -58,7 +55,7 @@ export async function PATCH(
         similar_examples: body.similarExamples ?? [],
         learner_tip: body.learnerTip ?? null,
         chat_messages: body.chatMessages ?? [],
-        is_favorite: isFavorite,
+        is_favorite: body.isFavorite ?? false,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "id" },
@@ -67,9 +64,9 @@ export async function PATCH(
     .single();
 
   if (error) {
-    console.error("[favorite] Supabase upsert failed:", error.message);
+    console.error("[sentence-analysis] Supabase upsert failed:", error.message);
     return NextResponse.json(
-      { error: "Could not save this favorite." },
+      { error: "Could not save this analysis.", code: "SAVE_FAILED" },
       { status: 500 },
     );
   }
@@ -83,7 +80,7 @@ export async function PATCH(
   });
 }
 
-async function parseFavoriteBody(request: Request) {
+async function parseAnalysisBody(request: Request): Promise<AnalysisBody> {
   const contentType = request.headers.get("content-type") ?? "";
 
   if (contentType.includes("multipart/form-data")) {
@@ -91,7 +88,6 @@ async function parseFavoriteBody(request: Request) {
     const image = formData.get("image");
 
     return {
-      isFavorite: formData.get("isFavorite")?.toString() !== "false",
       image: image instanceof File ? image : undefined,
       imageUrl: formData.get("imageUrl")?.toString() || undefined,
       sourceLanguage: formData.get("sourceLanguage")?.toString() || undefined,
@@ -108,10 +104,11 @@ async function parseFavoriteBody(request: Request) {
       similarExamples: parseJsonFormValue(formData.get("similarExamples"), []),
       learnerTip: formData.get("learnerTip")?.toString() || undefined,
       chatMessages: parseJsonFormValue(formData.get("chatMessages"), []),
+      isFavorite: formData.get("isFavorite")?.toString() === "true",
     };
   }
 
-  return (await request.json()) as FavoriteBody;
+  return (await request.json()) as AnalysisBody;
 }
 
 function parseJsonFormValue(value: FormDataEntryValue | null, fallback: unknown) {
@@ -124,40 +121,4 @@ function parseJsonFormValue(value: FormDataEntryValue | null, fallback: unknown)
   } catch {
     return fallback;
   }
-}
-
-export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const { id } = await params;
-  const { supabase, user, error: authError } = await getUserFromRequest(request);
-
-  if (!supabase || !user) {
-    return NextResponse.json(
-      {
-        error: authError ?? "Login required.",
-      },
-      { status: authError === "Missing Supabase configuration." ? 500 : 401 },
-    );
-  }
-
-  const { error } = await supabase
-    .from("sentence_analyses")
-    .delete()
-    .eq("id", id)
-    .eq("user_id", user.id);
-
-  if (error) {
-    console.error("[favorite] Supabase delete failed:", error.message);
-    return NextResponse.json(
-      { error: "Could not delete this favorite." },
-      { status: 500 },
-    );
-  }
-
-  return NextResponse.json({
-    id,
-    deleted: true,
-  });
 }

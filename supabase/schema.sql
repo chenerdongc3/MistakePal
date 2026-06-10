@@ -12,13 +12,17 @@ create table if not exists sentence_analyses (
   grammar_points jsonb,
   similar_examples jsonb,
   learner_tip text,
+  chat_messages jsonb default '[]'::jsonb,
   is_favorite boolean default false,
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
 );
 
 alter table public.sentence_analyses
   add column if not exists translated_sentence text,
-  add column if not exists learner_tip text;
+  add column if not exists learner_tip text,
+  add column if not exists chat_messages jsonb default '[]'::jsonb,
+  add column if not exists updated_at timestamptz default now();
 
 create index if not exists sentence_analyses_favorites_created_at_idx
   on sentence_analyses (created_at desc)

@@ -43,8 +43,10 @@ export type SentenceAnalysis = SentenceAnalysisContext & {
   grammarPoints?: GrammarPoint[];
   similarExamples?: SimilarExample[];
   learnerTip?: string;
+  chatMessages?: ChatMessage[];
   isFavorite: boolean;
   createdAt: string;
+  updatedAt?: string;
   debug?: {
     provider: string;
     model: string;
@@ -104,6 +106,9 @@ export type UiCopy = {
   ocrSubtitle: (language: string) => string;
   originalSentence: string;
   originalTranslation: string;
+  editOcr: string;
+  saveEdit: string;
+  cancelEdit: string;
   learnOnDemand: string;
   learnOnDemandSubtitle: string;
   analyzeSection: string;
