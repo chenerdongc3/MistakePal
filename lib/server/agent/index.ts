@@ -20,6 +20,7 @@ export async function runMistakePalAgent({
   agentConfig,
   analysis,
   explanationLanguage,
+  favoriteCardsLoader,
   messages,
 }: RunLearningAgentInput): Promise<RunLearningAgentOutput> {
   if (agentConfig?.mode === "personal") {
@@ -40,6 +41,7 @@ export async function runMistakePalAgent({
     apiKey,
     analysis,
     explanationLanguage,
+    favoriteCardsLoader,
     toolEvents,
   });
   const toolByName = new Map(tools.map((tool) => [tool.name, tool]));
@@ -208,6 +210,7 @@ You are MistakePal, a focused AI tutor for language learners.
 Answer entirely in ${explanationLanguage}.
 Only help with the current sentence and its language-learning context.
 Use tools when the learner asks for sentence breakdown, vocabulary, grammar, similar examples, or learner tips.
+Use get_recent_favorite_cards when the learner asks what they recently learned, reviewed, saved, collected, or asks about their favorite cards.
 Do not call tools for OCR, saving favorites, deleting favorites, account management, payment, or unrelated tasks.
 If the answer is simple and already clear from context, answer directly without tools.
 Keep responses concise, practical, and beginner-friendly.

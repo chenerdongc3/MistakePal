@@ -60,14 +60,16 @@ export function createLearningTools({
   apiKey,
   analysis,
   explanationLanguage,
+  favoriteCardsLoader,
   toolEvents,
 }: {
   apiKey: string;
   analysis: SentenceAnalysis;
   explanationLanguage: string;
+  favoriteCardsLoader?: () => Promise<SentenceAnalysis[]>;
   toolEvents: LearningToolEvent[];
 }) {
-  return learningToolDefinitions.map((definition) =>
+  const learningTools = learningToolDefinitions.map((definition) =>
     tool(
       async () => {
         try {
@@ -111,4 +113,60 @@ export function createLearningTools({
       },
     ),
   );
+
+  if (!favoriteCardsLoader) {
+    return learningTools;
+  }
+
+  return [
+    ...learningTools,
+    tool(
+      async () => {
+        try {
+          const favorites = await favoriteCardsLoader();
+
+          toolEvents.push({
+            name: "get_recent_favorite_cards",
+            label: "Recent favorite cards",
+            status: "completed",
+          });
+
+          return JSON.stringify({
+            count: favorites.length,
+            cards: favorites.slice(0, 12).map((favorite) => ({
+              id: favorite.id,
+              sourceLanguage: favorite.sourceLanguage,
+              explanationLanguage: favorite.explanationLanguage,
+              originalSentence: favorite.originalSentence,
+              originalTranslation: favorite.originalTranslation,
+              translatedSentence: favorite.translatedSentence ?? "",
+              vocabulary: favorite.vocabulary ?? [],
+              grammarPoints: favorite.grammarPoints ?? [],
+              learnerTip: favorite.learnerTip ?? "",
+              createdAt: favorite.createdAt,
+            })),
+          });
+        } catch (error) {
+          toolEvents.push({
+            name: "get_recent_favorite_cards",
+            label: "Recent favorite cards",
+            status: "failed",
+          });
+
+          return JSON.stringify({
+            error:
+              error instanceof Error
+                ? error.message
+                : "Could not load favorite cards.",
+          });
+        }
+      },
+      {
+        name: "get_recent_favorite_cards",
+        description:
+          "Load the learner's recent saved favorite sentence cards when they ask what they recently learned, reviewed, saved, or collected.",
+        schema: toolInputSchema,
+      },
+    ),
+  ];
 }

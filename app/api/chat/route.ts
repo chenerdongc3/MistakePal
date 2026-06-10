@@ -97,6 +97,7 @@ export async function POST(request: Request) {
       apiKey,
       agentConfig,
       analysis: body.analysis,
+      favoriteCardsLoader: createFavoriteCardsLoader(request),
       messages: body.messages,
       explanationLanguage:
         body.explanationLanguage ?? body.analysis.explanationLanguage,
@@ -121,6 +122,30 @@ export async function POST(request: Request) {
       { status: 502 },
     );
   }
+}
+
+function createFavoriteCardsLoader(request: Request) {
+  return async () => {
+    const authorization = request.headers.get("authorization");
+    const favoritesUrl = new URL("/api/favorites", request.url);
+    const response = await fetch(favoritesUrl, {
+      cache: "no-store",
+      headers: authorization
+        ? {
+            Authorization: authorization,
+          }
+        : undefined,
+    });
+
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      throw new Error(errorData?.error ?? "Could not load favorite cards.");
+    }
+
+    return (await response.json()) as SentenceAnalysis[];
+  };
 }
 
 function normalizeAgentConfig(config?: PersonalAgentConfig): PersonalAgentConfig {

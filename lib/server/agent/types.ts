@@ -15,6 +15,7 @@ export type RunLearningAgentInput = {
   agentConfig?: PersonalAgentConfig;
   analysis: SentenceAnalysis;
   explanationLanguage: string;
+  favoriteCardsLoader?: () => Promise<SentenceAnalysis[]>;
   messages: ChatMessage[];
 };
 
