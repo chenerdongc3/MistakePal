@@ -107,7 +107,7 @@ export function UserSettingsPanel({
   billingProfile,
   billingStatus,
   billingUrl,
-  isBillingLoading,
+  checkoutLoadingPlan,
   plan,
   onAgentConfigChange,
   onBack,
@@ -119,7 +119,7 @@ export function UserSettingsPanel({
   billingProfile: BillingProfile | null;
   billingStatus: string;
   billingUrl: string;
-  isBillingLoading: boolean;
+  checkoutLoadingPlan: Exclude<SubscriptionPlan, "free"> | "";
   plan: SubscriptionPlan;
   onAgentConfigChange: (value: PersonalAgentConfig) => void;
   onBack: () => void;
@@ -181,6 +181,9 @@ export function UserSettingsPanel({
               const currentPlan = billingProfile?.plan ?? plan;
               const isSelected = currentPlan === option.id;
               const isPaidPlan = option.id !== "free";
+              const isCheckoutLoading =
+                checkoutLoadingPlan === option.id;
+              const isCheckoutDisabled = Boolean(checkoutLoadingPlan);
 
               return (
                 <div
@@ -210,13 +213,15 @@ export function UserSettingsPanel({
                   {isPaidPlan ? (
                     <Button
                       className="mt-4 w-full"
-                      disabled={isBillingLoading}
+                      disabled={isCheckoutDisabled}
                       onClick={() =>
                         onCheckout(option.id as Exclude<SubscriptionPlan, "free">)
                       }
                       type="button"
                     >
-                      {isBillingLoading ? "Starting..." : `Upgrade to ${option.name}`}
+                      {isCheckoutLoading
+                        ? "Starting..."
+                        : `Upgrade to ${option.name}`}
                     </Button>
                   ) : (
                     <Button

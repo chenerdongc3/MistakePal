@@ -82,7 +82,9 @@ export default function Home() {
   >({});
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSavingFavorite, setIsSavingFavorite] = useState(false);
-  const [isBillingLoading, setIsBillingLoading] = useState(false);
+  const [checkoutLoadingPlan, setCheckoutLoadingPlan] = useState<
+    Exclude<SubscriptionPlan, "free"> | ""
+  >("");
   const [deletingFavoriteId, setDeletingFavoriteId] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [error, setError] = useState("");
@@ -449,7 +451,7 @@ export default function Home() {
   async function handleCheckout(plan: Exclude<SubscriptionPlan, "free">) {
     setBillingError("");
     setBillingStatus("");
-    setIsBillingLoading(true);
+    setCheckoutLoadingPlan(plan);
 
     try {
       const accessToken = await getAccessToken(supabaseClient);
@@ -481,7 +483,7 @@ export default function Home() {
     } catch (requestError) {
       setBillingError(getUserFacingErrorMessage(requestError, "billing"));
     } finally {
-      setIsBillingLoading(false);
+      setCheckoutLoadingPlan("");
     }
   }
 
@@ -520,6 +522,11 @@ export default function Home() {
           throw signInError;
         }
 
+        if (!isEmailVerified(data.user)) {
+          await supabaseClient.auth.signOut();
+          throw new Error("Please verify your email before signing in.");
+        }
+
         if (data.user) {
           setUser(data.user);
         }
@@ -537,10 +544,8 @@ export default function Home() {
         throw signUpError;
       }
 
-      if (data.session?.user) {
-        setUser(data.user);
-        setAuthStatus("Account created and signed in.");
-        return;
+      if (data.session) {
+        await supabaseClient.auth.signOut();
       }
 
       setIsVerificationPending(true);
@@ -562,6 +567,10 @@ export default function Home() {
     setAuthVerificationCode("");
     setAuthStatus("");
     setError("");
+  }
+
+  function isEmailVerified(nextUser: User | null) {
+    return Boolean(nextUser?.email_confirmed_at || nextUser?.confirmed_at);
   }
 
   function handleUseAnotherEmail() {
@@ -1449,7 +1458,7 @@ export default function Home() {
             billingProfile={billingProfile}
             billingStatus={billingStatus}
             billingUrl={billingUrl}
-            isBillingLoading={isBillingLoading}
+            checkoutLoadingPlan={checkoutLoadingPlan}
             plan={selectedPlan}
             onAgentConfigChange={setAgentConfig}
             onBack={() => router.push("/learn")}
@@ -1524,15 +1533,6 @@ export default function Home() {
                     onMarkMastered={handleMarkCurrentMastered}
                   />
                 ) : null}
-                <ChatCard
-                  contextSentence={analysis.originalSentence}
-                  chatInput={chatInput}
-                  copy={copy}
-                  isChatLoading={isChatLoading}
-                  messages={chatMessages}
-                  onInputChange={setChatInput}
-                  onSubmit={handleAskQuestion}
-                />
               </div>
             ) : (
               <Card className="border-dashed border-slate-300">
@@ -1549,6 +1549,17 @@ export default function Home() {
           </>
         )}
       </div>
+      {user && analysis ? (
+        <ChatCard
+          contextSentence={analysis.originalSentence}
+          chatInput={chatInput}
+          copy={copy}
+          isChatLoading={isChatLoading}
+          messages={chatMessages}
+          onInputChange={setChatInput}
+          onSubmit={handleAskQuestion}
+        />
+      ) : null}
     </main>
   );
 }
