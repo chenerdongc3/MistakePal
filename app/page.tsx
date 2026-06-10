@@ -1,19 +1,27 @@
 "use client";
 
-import type { ChangeEvent, FormEvent } from "react";
+import type { FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { AuthCard } from "../components/auth-card";
+import { BatchProgressCard } from "../components/batch-progress-card";
+import { BatchReviewActions } from "../components/batch-review-actions";
 import { ChatCard } from "../components/chat-card";
 import { FavoritesList } from "../components/favorites-list";
 import { LearningSectionsCard } from "../components/learning-sections-card";
+import { MultiImageUploadCard } from "../components/multi-image-upload-card";
 import { OcrResultCard } from "../components/ocr-result-card";
 import { RecentAnalysesList } from "../components/recent-analyses-list";
 import { UserSettingsPanel } from "../components/user-settings-panel";
+import { Alert } from "../components/ui/alert";
+import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import { Card, CardContent } from "../components/ui/card";
 import { createBrowserSupabaseClient, getAccessToken } from "../lib/client/supabase";
 import type {
+  BatchUploadItem,
   BillingProfile,
   ChatMessage,
   PersonalAgentConfig,
@@ -27,8 +35,10 @@ import { explanationLanguages, getUiCopy } from "../lib/ui-copy";
 type AuthMode = "sign-in" | "sign-up";
 type ActiveView = "learn" | "settings";
 const agentConfigStorageKey = "mistakepal-agent-config";
+const agentConfigMetadataKey = "mistakepalAgentConfig";
 const planStorageKey = "mistakepal-plan";
 const maxScreenshotSizeBytes = 8 * 1024 * 1024;
+const maxBatchImageCount = 10;
 const allowedScreenshotTypes = new Set([
   "image/png",
   "image/jpeg",
@@ -45,6 +55,7 @@ const defaultAgentConfig: PersonalAgentConfig = {
 
 export default function Home() {
   const resultRef = useRef<HTMLDivElement | null>(null);
+  const uploadQueueRef = useRef<BatchUploadItem[]>([]);
   const pathname = usePathname();
   const router = useRouter();
   const [supabaseClient] = useState<SupabaseClient | null>(() =>
@@ -57,7 +68,9 @@ export default function Home() {
   const [authStatus, setAuthStatus] = useState("");
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [image, setImage] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState("");
+  const [uploadQueue, setUploadQueue] = useState<BatchUploadItem[]>([]);
+  const [activeQueueItemId, setActiveQueueItemId] = useState("");
+  const [batchStatus, setBatchStatus] = useState("");
   const [explanationLanguage, setExplanationLanguage] = useState("Chinese");
   const [analysis, setAnalysis] = useState<SentenceAnalysis | null>(null);
   const [recentAnalyses, setRecentAnalyses] = useState<SentenceAnalysis[]>([]);
@@ -111,6 +124,33 @@ export default function Home() {
   }, [agentConfig]);
 
   useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    const metadataConfig = parsePersonalAgentConfig(
+      user.app_metadata?.[agentConfigMetadataKey],
+    );
+
+    if (!metadataConfig) {
+      return;
+    }
+
+    const storedConfig = parsePersonalAgentConfig(
+      window.localStorage.getItem(agentConfigStorageKey),
+    );
+
+    if (storedConfig?.mode === "personal" && storedConfig.apiKey) {
+      return;
+    }
+
+    setAgentConfig({
+      ...defaultAgentConfig,
+      ...metadataConfig,
+    });
+  }, [user]);
+
+  useEffect(() => {
     window.localStorage.setItem(planStorageKey, selectedPlan);
   }, [selectedPlan]);
 
@@ -161,34 +201,88 @@ export default function Home() {
   }, [user]);
 
   useEffect(() => {
-    if (!image) {
-      setPreviewUrl("");
+    uploadQueueRef.current = uploadQueue;
+  }, [uploadQueue]);
+
+  useEffect(() => {
+    return () => {
+      uploadQueueRef.current.forEach((item) =>
+        URL.revokeObjectURL(item.previewUrl),
+      );
+    };
+  }, []);
+
+  function handleImagesSelected(files: File[]) {
+    const nextItems: BatchUploadItem[] = [];
+    const validationErrors: string[] = [];
+    const acceptedFiles = files.slice(0, maxBatchImageCount);
+
+    if (files.length > maxBatchImageCount) {
+      validationErrors.push(
+        `Only the first ${maxBatchImageCount} screenshots were added.`,
+      );
+    }
+
+    acceptedFiles.forEach((file) => {
+      const validationError = validateScreenshot(file);
+      if (validationError) {
+        validationErrors.push(`${file.name}: ${validationError}`);
+        return;
+      }
+
+      nextItems.push({
+        id: crypto.randomUUID(),
+        file,
+        previewUrl: URL.createObjectURL(file),
+        status: "pending",
+      });
+    });
+
+    if (nextItems.length === 0) {
+      setError(validationErrors[0] ?? "Please upload at least one screenshot.");
       return;
     }
 
-    const objectUrl = URL.createObjectURL(image);
-    setPreviewUrl(objectUrl);
-
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [image]);
-
-  function handleImageChange(event: ChangeEvent<HTMLInputElement>) {
-    const nextImage = event.target.files?.[0] ?? null;
-
-    if (nextImage) {
-      const validationError = validateScreenshot(nextImage);
-
-      if (validationError) {
-        event.target.value = "";
-        setImage(null);
-        resetCurrentAnalysis();
-        setError(validationError);
-        return;
-      }
-    }
-
-    setImage(nextImage);
+    replaceUploadQueue(nextItems);
+    setActiveQueueItemId("");
+    setBatchStatus("");
+    setImage(null);
     resetCurrentAnalysis();
+    setError(validationErrors.join(" "));
+  }
+
+  function replaceUploadQueue(nextQueue: BatchUploadItem[]) {
+    setUploadQueue((currentQueue) => {
+      currentQueue.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+      return nextQueue;
+    });
+  }
+
+  function updateQueueItem(
+    id: string,
+    updates: Partial<Omit<BatchUploadItem, "id" | "file" | "previewUrl">>,
+  ) {
+    setUploadQueue((currentQueue) =>
+      currentQueue.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              ...updates,
+            }
+          : item,
+      ),
+    );
+  }
+
+  function removeUploadItem(id: string) {
+    setUploadQueue((currentQueue) => {
+      const selectedItem = currentQueue.find((item) => item.id === id);
+      if (selectedItem) {
+        URL.revokeObjectURL(selectedItem.previewUrl);
+      }
+
+      return currentQueue.filter((item) => item.id !== id);
+    });
   }
 
   function resetCurrentAnalysis() {
@@ -456,21 +550,33 @@ export default function Home() {
     router.replace("/learn");
   }
 
-  async function handleAnalyze(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function startBatchAnalysis() {
     setError("");
 
-    if (!image) {
+    const nextItem = uploadQueue.find((item) => item.status === "pending");
+
+    if (!nextItem) {
       setError("Please upload a screenshot before analyzing.");
       return;
     }
 
+    await analyzeQueueItem(nextItem);
+  }
+
+  async function analyzeQueueItem(queueItem: BatchUploadItem) {
     const formData = new FormData();
-    formData.append("image", image);
+    formData.append("image", queueItem.file);
     formData.append("explanationLanguage", explanationLanguage);
 
+    setImage(queueItem.file);
+    setActiveQueueItemId(queueItem.id);
     setIsAnalyzing(true);
+    setBatchStatus("");
     setAnalysisStatus(copy.analyzing);
+    updateQueueItem(queueItem.id, {
+      error: undefined,
+      status: "processing",
+    });
 
     try {
       const startedAt = performance.now();
@@ -497,25 +603,37 @@ export default function Home() {
       const data = (await response.json()) as SentenceAnalysis;
       const persisted = await persistAnalysis(data, {
         includeImage: true,
-        sourceImage: image,
+        sourceImage: queueItem.file,
       }).catch((persistError) => {
         setError(getUserFacingErrorMessage(persistError, "save"));
         return null;
       });
-      setAnalysis(persisted ?? data);
-      upsertRecentAnalysis(persisted ?? data);
+      const nextAnalysis = persisted ?? data;
+
+      setAnalysis(nextAnalysis);
+      upsertRecentAnalysis(nextAnalysis);
       fetchBillingProfile();
       setSectionStates({});
       setChatMessages([]);
       setChatInput("");
+      updateQueueItem(queueItem.id, {
+        analysisId: nextAnalysis.id,
+        status: "ready",
+      });
       setAnalysisStatus(
         data.debug
           ? copy.ocrDone((data.debug.elapsedMs / 1000).toFixed(1))
           : copy.ocrDone(((performance.now() - startedAt) / 1000).toFixed(1)),
       );
     } catch (requestError) {
-      setError(getUserFacingErrorMessage(requestError, "ocr"));
+      const message = getUserFacingErrorMessage(requestError, "ocr");
+      setError(message);
       setAnalysisStatus("");
+      updateQueueItem(queueItem.id, {
+        error: message,
+        status: "failed",
+      });
+      await analyzeNextPendingItem(queueItem.id);
     } finally {
       setIsAnalyzing(false);
     }
@@ -597,8 +715,12 @@ export default function Home() {
   }
 
   async function handleSaveFavorite() {
+    await saveCurrentFavorite();
+  }
+
+  async function saveCurrentFavorite() {
     if (!analysis) {
-      return;
+      return null;
     }
 
     setError("");
@@ -657,10 +779,12 @@ export default function Home() {
         );
         return [nextFavorite, ...withoutDuplicate].slice(0, 5);
       });
+      return nextFavorite;
     } catch (requestError) {
       setError(
         getUserFacingErrorMessage(requestError, "favorite"),
       );
+      return null;
     } finally {
       setIsSavingFavorite(false);
     }
@@ -890,13 +1014,41 @@ export default function Home() {
     return value === "free" || value === "plus" || value === "pro";
   }
 
+  function parsePersonalAgentConfig(
+    value: unknown,
+  ): Partial<PersonalAgentConfig> | null {
+    const parsedValue =
+      typeof value === "string"
+        ? safelyParseJson<Record<string, unknown>>(value)
+        : value;
+
+    if (!parsedValue || typeof parsedValue !== "object") {
+      return null;
+    }
+
+    const config = parsedValue as Partial<PersonalAgentConfig>;
+
+    if (config.mode !== "personal" && config.mode !== "platform") {
+      return null;
+    }
+
+    return config;
+  }
+
+  function safelyParseJson<T>(value: string): T | null {
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return null;
+    }
+  }
+
   function handleSelectFavorite(favorite: SentenceAnalysis) {
     handleSelectAnalysis(favorite);
   }
 
   function handleSelectAnalysis(nextAnalysis: SentenceAnalysis) {
     setImage(null);
-    setPreviewUrl("");
     setAnalysis(nextAnalysis);
     setExplanationLanguage(nextAnalysis.explanationLanguage || "Chinese");
     setSectionStates({});
@@ -911,6 +1063,49 @@ export default function Home() {
         block: "start",
       });
     }, 0);
+  }
+
+  async function analyzeNextPendingItem(currentItemId: string) {
+    const nextItem = uploadQueue.find(
+      (item) => item.id !== currentItemId && item.status === "pending",
+    );
+
+    if (!nextItem) {
+      setActiveQueueItemId("");
+      setBatchStatus("Batch complete. Review your recent analyses below.");
+      return;
+    }
+
+    await analyzeQueueItem(nextItem);
+  }
+
+  async function handleMarkCurrentMastered() {
+    if (!activeQueueItemId) {
+      return;
+    }
+
+    updateQueueItem(activeQueueItemId, {
+      status: "mastered",
+    });
+    await analyzeNextPendingItem(activeQueueItemId);
+  }
+
+  async function handleFavoriteCurrentAndNext() {
+    if (!activeQueueItemId) {
+      return;
+    }
+
+    const nextFavorite = await saveCurrentFavorite();
+
+    if (!nextFavorite) {
+      return;
+    }
+
+    updateQueueItem(activeQueueItemId, {
+      analysisId: nextFavorite.id,
+      status: "favorited",
+    });
+    await analyzeNextPendingItem(activeQueueItemId);
   }
 
   function upsertRecentAnalysis(nextAnalysis: SentenceAnalysis) {
@@ -1041,6 +1236,18 @@ export default function Home() {
     }
   }
 
+  const activeQueueItem = uploadQueue.find(
+    (item) => item.id === activeQueueItemId,
+  );
+  const activeQueueIndex = activeQueueItem
+    ? uploadQueue.findIndex((item) => item.id === activeQueueItem.id)
+    : -1;
+  const shouldShowBatchActions =
+    Boolean(analysis) &&
+    Boolean(activeQueueItem) &&
+    activeQueueItem?.status === "ready" &&
+    activeQueueItem.analysisId === analysis?.id;
+
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-950 sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-3xl flex-col gap-6">
@@ -1050,9 +1257,7 @@ export default function Home() {
               <h1 className="text-3xl font-semibold tracking-tight">
                 MistakePal
               </h1>
-              <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-                MVP
-              </span>
+              <Badge>MVP</Badge>
             </div>
             <p className="mt-2 text-sm text-slate-600">
               Understand Duolingo sentences from screenshots.
@@ -1063,7 +1268,7 @@ export default function Home() {
               <span>{user.email}</span>
               <div className="flex flex-wrap gap-2 sm:justify-end">
                 <Link
-                  className={`w-fit rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                  className={`inline-flex h-10 w-fit items-center justify-center rounded-md border px-3 py-2 text-sm font-medium transition ${
                     activeView === "learn"
                       ? "border-blue-200 bg-blue-50 text-blue-700"
                       : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
@@ -1073,7 +1278,7 @@ export default function Home() {
                   学习
                 </Link>
                 <Link
-                  className={`w-fit rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                  className={`inline-flex h-10 w-fit items-center justify-center rounded-md border px-3 py-2 text-sm font-medium transition ${
                     activeView === "settings"
                       ? "border-blue-200 bg-blue-50 text-blue-700"
                       : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
@@ -1082,13 +1287,14 @@ export default function Home() {
                 >
                   我的
                 </Link>
-                <button
-                  className="w-fit rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                <Button
+                  className="w-fit"
                   onClick={handleSignOut}
                   type="button"
+                  variant="outline"
                 >
                   Sign out
-                </button>
+                </Button>
               </div>
             </div>
           ) : null}
@@ -1124,81 +1330,34 @@ export default function Home() {
           />
         ) : (
           <>
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-              <form className="space-y-5" onSubmit={handleAnalyze}>
-                <label className="block space-y-2">
-                  <span className="text-sm font-medium text-slate-700">
-                    Explanation language
-                  </span>
-                  <select
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                    value={explanationLanguage}
-                    onChange={(event) =>
-                      setExplanationLanguage(event.target.value)
-                    }
-                  >
-                    {explanationLanguages.map((language) => (
-                      <option key={language} value={language}>
-                        {language}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+            <MultiImageUploadCard
+              explanationLanguage={explanationLanguage}
+              isAnalyzing={isAnalyzing}
+              languages={explanationLanguages}
+              maxFiles={maxBatchImageCount}
+              queue={uploadQueue}
+              onFilesSelected={handleImagesSelected}
+              onLanguageChange={setExplanationLanguage}
+              onRemoveItem={removeUploadItem}
+              onStart={startBatchAnalysis}
+            />
 
-                <label className="block space-y-2">
-                  <span className="text-sm font-medium text-slate-700">
-                    Duolingo screenshot
-                  </span>
-                  <input
-                    accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
-                    className="w-full rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:bg-slate-100"
-                    type="file"
-                    onChange={handleImageChange}
-                  />
-                  <span className="block text-xs leading-5 text-slate-500">
-                    PNG, JPG, JPEG, or WEBP. Maximum 8MB. Use a clear screenshot
-                    with the target sentence and English translation visible.
-                  </span>
-                </label>
+            {error ? (
+              <Alert variant="destructive">{error}</Alert>
+            ) : null}
 
-                <div className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 sm:grid-cols-3">
-                  <span>1. Read screenshot</span>
-                  <span>2. Extract sentence</span>
-                  <span>3. Learn grammar, words, examples</span>
-                </div>
+            {analysisStatus ? (
+              <Alert>{analysisStatus}</Alert>
+            ) : null}
 
-                {previewUrl ? (
-                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      alt="Uploaded Duolingo screenshot preview"
-                      className="max-h-96 w-full object-contain"
-                      src={previewUrl}
-                    />
-                  </div>
-                ) : null}
+            {batchStatus ? (
+              <Alert variant="success">{batchStatus}</Alert>
+            ) : null}
 
-                {error ? (
-                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                    {error}
-                  </div>
-                ) : null}
-
-                {analysisStatus ? (
-                  <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700">
-                    {analysisStatus}
-                  </div>
-                ) : null}
-
-                <button
-                  className="w-full rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300 sm:w-auto"
-                  disabled={isAnalyzing}
-                  type="submit"
-                >
-                  {isAnalyzing ? copy.readingButton : copy.analyzeButton}
-                </button>
-              </form>
-            </section>
+            <BatchProgressCard
+              activeItemId={activeQueueItemId}
+              queue={uploadQueue}
+            />
 
             {analysis ? (
               <div className="flex flex-col gap-6" ref={resultRef}>
@@ -1215,6 +1374,15 @@ export default function Home() {
                   sectionStates={sectionStates}
                   onAnalyzeSection={handleAnalyzeSection}
                 />
+                {shouldShowBatchActions ? (
+                  <BatchReviewActions
+                    currentIndex={activeQueueIndex}
+                    isSavingFavorite={isSavingFavorite}
+                    totalCount={uploadQueue.length}
+                    onFavoriteNext={handleFavoriteCurrentAndNext}
+                    onMarkMastered={handleMarkCurrentMastered}
+                  />
+                ) : null}
                 <ChatCard
                   contextSentence={analysis.originalSentence}
                   chatInput={chatInput}
@@ -1226,9 +1394,11 @@ export default function Home() {
                 />
               </div>
             ) : (
-              <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center shadow-sm">
-                <p className="text-sm text-slate-600">{copy.empty}</p>
-              </section>
+              <Card className="border-dashed border-slate-300">
+                <CardContent className="pt-6 text-center">
+                  <p className="text-sm text-slate-600">{copy.empty}</p>
+                </CardContent>
+              </Card>
             )}
 
             <FavoritesList

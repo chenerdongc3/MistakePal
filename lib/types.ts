@@ -95,6 +95,23 @@ export type BillingProfile = {
   usedAiCount: number;
 };
 
+export type BatchUploadStatus =
+  | "pending"
+  | "processing"
+  | "ready"
+  | "mastered"
+  | "favorited"
+  | "failed";
+
+export type BatchUploadItem = {
+  id: string;
+  file: File;
+  previewUrl: string;
+  status: BatchUploadStatus;
+  error?: string;
+  analysisId?: string;
+};
+
 export type SectionState = {
   isLoading: boolean;
   error?: string;
