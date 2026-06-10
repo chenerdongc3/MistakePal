@@ -316,7 +316,7 @@ export async function createCreemCheckout({
     },
     body: JSON.stringify({
       product_id: productId,
-      success_url: `${appUrl}/?billing=success`,
+      success_url: `${appUrl}/billing/success`,
       metadata: {
         plan,
         userId,

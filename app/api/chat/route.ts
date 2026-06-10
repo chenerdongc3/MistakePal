@@ -76,16 +76,20 @@ export async function POST(request: Request) {
     );
   }
 
-  const billingUsage = await checkBillingUsage(request, "ai");
+  const shouldUsePlatformQuota = agentConfig.mode !== "personal";
 
-  if (!billingUsage.allowed) {
-    return NextResponse.json(
-      {
-        error: billingUsage.error,
-        code: "QUOTA_EXCEEDED",
-      },
-      { status: billingUsage.status },
-    );
+  if (shouldUsePlatformQuota) {
+    const billingUsage = await checkBillingUsage(request, "ai");
+
+    if (!billingUsage.allowed) {
+      return NextResponse.json(
+        {
+          error: billingUsage.error,
+          code: "QUOTA_EXCEEDED",
+        },
+        { status: billingUsage.status },
+      );
+    }
   }
 
   try {
@@ -97,7 +101,10 @@ export async function POST(request: Request) {
       explanationLanguage:
         body.explanationLanguage ?? body.analysis.explanationLanguage,
     });
-    await recordBillingUsage(request, "ai");
+
+    if (shouldUsePlatformQuota) {
+      await recordBillingUsage(request, "ai");
+    }
 
     return NextResponse.json(result);
   } catch (error) {

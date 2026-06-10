@@ -2,6 +2,8 @@
 
 import type { ChangeEvent, FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { AuthCard } from "../components/auth-card";
 import { ChatCard } from "../components/chat-card";
@@ -43,6 +45,8 @@ const defaultAgentConfig: PersonalAgentConfig = {
 
 export default function Home() {
   const resultRef = useRef<HTMLDivElement | null>(null);
+  const pathname = usePathname();
+  const router = useRouter();
   const [supabaseClient] = useState<SupabaseClient | null>(() =>
     createBrowserSupabaseClient(),
   );
@@ -78,9 +82,9 @@ export default function Home() {
   const [billingProfile, setBillingProfile] = useState<BillingProfile | null>(
     null,
   );
-  const [activeView, setActiveView] = useState<ActiveView>("learn");
   const copy = getUiCopy(explanationLanguage);
   const billingUrl = process.env.NEXT_PUBLIC_BILLING_URL ?? "";
+  const activeView: ActiveView = pathname === "/settings" ? "settings" : "learn";
 
   useEffect(() => {
     const storedConfig = window.localStorage.getItem(agentConfigStorageKey);
@@ -111,13 +115,18 @@ export default function Home() {
   }, [selectedPlan]);
 
   useEffect(() => {
+    if (pathname === "/") {
+      router.replace("/learn");
+      return;
+    }
+
     const searchParams = new URLSearchParams(window.location.search);
 
     if (searchParams.get("billing") === "success") {
       setBillingStatus("Payment completed. Your subscription will update shortly.");
-      window.history.replaceState(null, "", window.location.pathname);
+      window.history.replaceState(null, "", "/settings");
     }
-  }, []);
+  }, [pathname, router]);
 
   useEffect(() => {
     if (!supabaseClient) {
@@ -444,7 +453,7 @@ export default function Home() {
     setFavorites([]);
     setChatMessages([]);
     setAuthStatus("");
-    setActiveView("learn");
+    router.replace("/learn");
   }
 
   async function handleAnalyze(event: FormEvent<HTMLFormElement>) {
@@ -1053,21 +1062,26 @@ export default function Home() {
             <div className="flex flex-col gap-2 text-sm text-slate-600 sm:items-end">
               <span>{user.email}</span>
               <div className="flex flex-wrap gap-2 sm:justify-end">
-                <button
+                <Link
+                  className={`w-fit rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                    activeView === "learn"
+                      ? "border-blue-200 bg-blue-50 text-blue-700"
+                      : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                  href="/learn"
+                >
+                  学习
+                </Link>
+                <Link
                   className={`w-fit rounded-lg border px-3 py-2 text-sm font-medium transition ${
                     activeView === "settings"
                       ? "border-blue-200 bg-blue-50 text-blue-700"
                       : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
                   }`}
-                  onClick={() =>
-                    setActiveView((current) =>
-                      current === "settings" ? "learn" : "settings",
-                    )
-                  }
-                  type="button"
+                  href="/settings"
                 >
                   我的
-                </button>
+                </Link>
                 <button
                   className="w-fit rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
                   onClick={handleSignOut}
@@ -1104,7 +1118,7 @@ export default function Home() {
             isBillingLoading={isBillingLoading}
             plan={selectedPlan}
             onAgentConfigChange={setAgentConfig}
-            onBack={() => setActiveView("learn")}
+            onBack={() => router.push("/learn")}
             onCheckout={handleCheckout}
             onPlanChange={setSelectedPlan}
           />
