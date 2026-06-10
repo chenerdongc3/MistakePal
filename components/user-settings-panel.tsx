@@ -3,6 +3,12 @@ import type {
   PersonalAgentConfig,
   SubscriptionPlan,
 } from "../lib/types";
+import { Alert } from "./ui/alert";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { Input } from "./ui/input";
+import { Select } from "./ui/select";
 
 const planOptions: {
   id: SubscriptionPlan;
@@ -140,38 +146,35 @@ export function UserSettingsPanel({
   }
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-      <div className="flex flex-col gap-3 border-b border-slate-200 pb-5 sm:flex-row sm:items-start sm:justify-between">
+    <Card>
+      <CardHeader className="flex flex-col gap-3 space-y-0 border-b border-slate-200 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-sm font-medium text-blue-700">我的</p>
-          <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">
+          <CardTitle className="mt-1 text-2xl">
             Settings
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
+          </CardTitle>
+          <CardDescription className="mt-2">
             选择当前计划，并配置聊天 Agent 使用的 API。
-          </p>
+          </CardDescription>
         </div>
-        <button
-          className="w-fit rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+        <Button
+          className="w-fit"
           onClick={onBack}
           type="button"
+          variant="outline"
         >
           返回学习
-        </button>
-      </div>
+        </Button>
+      </CardHeader>
 
-      <div className="mt-6 space-y-8">
+      <CardContent className="space-y-8 pt-6">
         <div>
           <h3 className="text-base font-semibold text-slate-950">Plan</h3>
           {billingError ? (
-            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              {billingError}
-            </div>
+            <Alert className="mt-3" variant="warning">{billingError}</Alert>
           ) : null}
           {billingStatus ? (
-            <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700">
-              {billingStatus}
-            </div>
+            <Alert className="mt-3">{billingStatus}</Alert>
           ) : null}
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
             {planOptions.map((option) => {
@@ -181,7 +184,7 @@ export function UserSettingsPanel({
 
               return (
                 <div
-                  className={`rounded-xl border p-4 text-left transition ${
+                  className={`rounded-md border p-4 text-left transition ${
                     isSelected
                       ? "border-blue-500 bg-blue-50 shadow-sm"
                       : "border-slate-200 bg-white hover:bg-slate-50"
@@ -196,21 +199,17 @@ export function UserSettingsPanel({
                     {option.name}
                   </span>
                   {isSelected ? (
-                    <span className="mt-2 inline-flex rounded-full border border-blue-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-blue-700">
-                      Current
-                    </span>
+                    <Badge className="mt-2 bg-white">Current</Badge>
                   ) : null}
                   {isPaidPlan ? (
-                    <span className="mt-2 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
-                      Creem
-                    </span>
+                    <Badge className="mt-2" variant="warning">Creem</Badge>
                   ) : null}
                   <span className="mt-2 block text-sm leading-6 text-slate-600">
                     {option.description}
                   </span>
                   {isPaidPlan ? (
-                    <button
-                      className="mt-4 w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    <Button
+                      className="mt-4 w-full"
                       disabled={isBillingLoading}
                       onClick={() =>
                         onCheckout(option.id as Exclude<SubscriptionPlan, "free">)
@@ -218,15 +217,16 @@ export function UserSettingsPanel({
                       type="button"
                     >
                       {isBillingLoading ? "Starting..." : `Upgrade to ${option.name}`}
-                    </button>
+                    </Button>
                   ) : (
-                    <button
-                      className="mt-4 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                    <Button
+                      className="mt-4 w-full"
                       onClick={() => onPlanChange("free")}
                       type="button"
+                      variant="outline"
                     >
                       Use Free
-                    </button>
+                    </Button>
                   )}
                 </div>
               );
@@ -242,7 +242,7 @@ export function UserSettingsPanel({
           ) : null}
           {billingUrl ? (
             <a
-              className="mt-4 inline-flex rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+              className="mt-4 inline-flex h-10 items-center justify-center rounded-md bg-slate-950 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800"
               href={billingUrl}
               rel="noreferrer"
               target="_blank"
@@ -264,7 +264,7 @@ export function UserSettingsPanel({
 
           <div className="mt-4 flex flex-wrap gap-2">
             {providerPresets.map((preset) => (
-              <button
+              <Button
                 className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                   agentConfig.mode === preset.config.mode &&
                   agentConfig.provider === preset.config.provider &&
@@ -276,28 +276,29 @@ export function UserSettingsPanel({
                 }`}
                 key={preset.label}
                 onClick={() => applyPreset(preset.config)}
+                size="sm"
                 type="button"
+                variant="outline"
               >
                 {preset.label}
-              </button>
+              </Button>
             ))}
           </div>
 
           {isUsingPlatformQuota ? (
-            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <Alert className="mt-4" variant="warning">
               <p className="font-semibold">当前使用平台额度</p>
               <p className="mt-1 leading-6">
                 不配置个人 API 时，聊天 Agent 会使用服务端默认模型配置。
               </p>
-            </div>
+            </Alert>
           ) : (
-            <div className="mt-4 space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="mt-4 space-y-4 rounded-md border border-slate-200 bg-slate-50 p-4">
               <label className="block space-y-1.5">
                 <span className="text-xs font-semibold text-slate-600">
                   API Key
                 </span>
-                <input
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                <Input
                   placeholder="sk-..."
                   type="password"
                   value={agentConfig.apiKey}
@@ -312,8 +313,7 @@ export function UserSettingsPanel({
                   <span className="text-xs font-semibold text-slate-600">
                     Provider
                   </span>
-                  <select
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  <Select
                     value={agentConfig.provider}
                     onChange={(event) =>
                       updateAgentConfig({
@@ -326,15 +326,14 @@ export function UserSettingsPanel({
                     <option value="openai-compatible">
                       OpenAI-compatible
                     </option>
-                  </select>
+                  </Select>
                 </label>
 
                 <label className="block space-y-1.5">
                   <span className="text-xs font-semibold text-slate-600">
                     区域
                   </span>
-                  <select
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  <Select
                     value={agentConfig.region}
                     onChange={(event) =>
                       updateAgentConfig({
@@ -346,7 +345,7 @@ export function UserSettingsPanel({
                     <option value="global">国外</option>
                     <option value="china">国内</option>
                     <option value="proxy">中转站</option>
-                  </select>
+                  </Select>
                 </label>
               </div>
 
@@ -354,8 +353,7 @@ export function UserSettingsPanel({
                 <span className="text-xs font-semibold text-slate-600">
                   Base URL
                 </span>
-                <input
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100"
+                <Input
                   disabled={agentConfig.provider === "gemini"}
                   placeholder="https://api.example.com/v1"
                   value={agentConfig.baseUrl}
@@ -369,8 +367,7 @@ export function UserSettingsPanel({
                 <span className="text-xs font-semibold text-slate-600">
                   模型
                 </span>
-                <input
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                <Input
                   placeholder={
                     agentConfig.provider === "gemini"
                       ? "gemini-2.5-flash"
@@ -389,7 +386,7 @@ export function UserSettingsPanel({
             </div>
           )}
         </div>
-      </div>
-    </section>
+      </CardContent>
+    </Card>
   );
 }

@@ -1,4 +1,8 @@
 import type { FormEvent } from "react";
+import { Alert } from "./ui/alert";
+import { Button } from "./ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { Input } from "./ui/input";
 
 type AuthMode = "sign-in" | "sign-up";
 
@@ -28,25 +32,27 @@ export function AuthCard({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-      <h2 className="text-lg font-semibold">
-        {authMode === "sign-in" ? "Sign in" : "Create account"}
-      </h2>
-      <p className="mt-1 text-sm text-slate-500">
-        Sign in to save and manage your favorite sentence cards.
-      </p>
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          {authMode === "sign-in" ? "Sign in" : "Create account"}
+        </CardTitle>
+        <CardDescription>
+          Sign in to save and manage your favorite sentence cards.
+        </CardDescription>
+      </CardHeader>
 
       {!isConfigured ? (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <Alert className="mx-5 sm:mx-6" variant="destructive">
           Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY.
-        </div>
+        </Alert>
       ) : null}
 
-      <form className="mt-5 space-y-4" onSubmit={onSubmit}>
+      <CardContent>
+      <form className="space-y-4" onSubmit={onSubmit}>
         <label className="block space-y-2">
           <span className="text-sm font-medium text-slate-700">Email</span>
-          <input
-            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+          <Input
             required
             type="email"
             value={authEmail}
@@ -56,8 +62,7 @@ export function AuthCard({
 
         <label className="block space-y-2">
           <span className="text-sm font-medium text-slate-700">Password</span>
-          <input
-            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+          <Input
             minLength={6}
             required
             type="password"
@@ -67,29 +72,25 @@ export function AuthCard({
         </label>
 
         {error ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {error}
-          </div>
+          <Alert variant="destructive">{error}</Alert>
         ) : null}
 
         {authStatus ? (
-          <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700">
-            {authStatus}
-          </div>
+          <Alert>{authStatus}</Alert>
         ) : null}
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <button
-            className="rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+          <Button
+            className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300"
             disabled={isAuthLoading || !isConfigured}
             type="submit"
           >
             {isAuthLoading
               ? "Please wait..."
               : authMode === "sign-in"
-                ? "Sign in"
-                : "Create account"}
-          </button>
+              ? "Sign in"
+              : "Create account"}
+          </Button>
           <button
             className="text-sm font-medium text-blue-700"
             type="button"
@@ -103,6 +104,7 @@ export function AuthCard({
           </button>
         </div>
       </form>
-    </section>
+      </CardContent>
+    </Card>
   );
 }

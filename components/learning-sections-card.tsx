@@ -2,6 +2,9 @@ import type { SectionKey, SectionState, SentenceAnalysis, UiCopy } from "../lib/
 import { getSectionCopy, learningSections } from "../lib/ui-copy";
 import { InfoBlock } from "./info-block";
 import { ListBlock } from "./list-block";
+import { Alert } from "./ui/alert";
+import { Button } from "./ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 
 export function LearningSectionsCard({
   analysis,
@@ -15,15 +18,13 @@ export function LearningSectionsCard({
   onAnalyzeSection: (section: SectionKey) => void;
 }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-      <div>
-        <h2 className="text-lg font-semibold">{copy.learnOnDemand}</h2>
-        <p className="mt-1 text-sm text-slate-500">
-          {copy.learnOnDemandSubtitle}
-        </p>
-      </div>
+    <Card>
+      <CardHeader>
+        <CardTitle>{copy.learnOnDemand}</CardTitle>
+        <CardDescription>{copy.learnOnDemandSubtitle}</CardDescription>
+      </CardHeader>
 
-      <div className="mt-5 grid gap-3">
+      <CardContent className="grid gap-3">
         {learningSections.map((section) => (
           <OnDemandSection
             analysis={analysis}
@@ -34,8 +35,8 @@ export function LearningSectionsCard({
             onAnalyzeSection={onAnalyzeSection}
           />
         ))}
-      </div>
-    </section>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -59,7 +60,7 @@ function OnDemandSection({
   const sectionCopy = getSectionCopy(section.key, copy);
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+    <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-sm font-semibold text-slate-950">
@@ -67,10 +68,10 @@ function OnDemandSection({
           </p>
           <p className="mt-1 text-sm text-slate-500">{sectionCopy.description}</p>
         </div>
-        <button
-          className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+        <Button
           disabled={state?.isLoading}
           onClick={() => onAnalyzeSection(section.key)}
+          size="sm"
           type="button"
         >
           {state?.isLoading
@@ -78,13 +79,11 @@ function OnDemandSection({
             : hasContent
               ? copy.refreshSection
               : getSectionActionLabel(section.key, copy.language)}
-        </button>
+        </Button>
       </div>
 
       {state?.error ? (
-        <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {state.error}
-        </div>
+        <Alert className="mt-3" variant="destructive">{state.error}</Alert>
       ) : null}
 
       {hasContent ? <div className="mt-4">{content}</div> : null}

@@ -1,4 +1,6 @@
 import type { SentenceAnalysis } from "../lib/types";
+import { Badge } from "./ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 
 export function RecentAnalysesList({
   analyses,
@@ -8,17 +10,17 @@ export function RecentAnalysesList({
   onSelectAnalysis: (analysis: SentenceAnalysis) => void;
 }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-        <h2 className="text-lg font-semibold">Recent analyses</h2>
-        <p className="text-xs text-slate-500">Latest 10 learning records.</p>
-      </div>
+    <Card>
+      <CardHeader className="flex flex-col gap-1 space-y-0 sm:flex-row sm:items-end sm:justify-between">
+        <CardTitle>Recent analyses</CardTitle>
+        <CardDescription>Latest 10 learning records.</CardDescription>
+      </CardHeader>
 
       {analyses.length > 0 ? (
-        <div className="mt-4 space-y-3">
+        <CardContent className="space-y-3">
           {analyses.map((analysis) => (
             <button
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-blue-200 hover:bg-blue-50/40"
+              className="w-full rounded-md border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-blue-200 hover:bg-blue-50/40"
               key={analysis.id}
               onClick={() => onSelectAnalysis(analysis)}
               type="button"
@@ -36,20 +38,22 @@ export function RecentAnalysesList({
                   <span>{analysis.sourceLanguage}</span>
                   <span>{analysis.explanationLanguage}</span>
                   {analysis.isFavorite ? (
-                    <span className="font-medium text-blue-700">Favorite</span>
+                    <Badge>Favorite</Badge>
                   ) : null}
                   <span>{formatDate(analysis.updatedAt ?? analysis.createdAt)}</span>
                 </div>
               </div>
             </button>
           ))}
-        </div>
+        </CardContent>
       ) : (
-        <p className="mt-3 text-sm text-slate-500">
+        <CardContent>
+        <p className="text-sm text-slate-500">
           OCR results you analyze will appear here automatically.
         </p>
+        </CardContent>
       )}
-    </section>
+    </Card>
   );
 }
 

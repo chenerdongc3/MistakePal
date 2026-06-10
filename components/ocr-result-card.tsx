@@ -1,6 +1,9 @@
 import { useState } from "react";
 import type { SentenceAnalysis, UiCopy } from "../lib/types";
 import { InfoBlock } from "./info-block";
+import { Button } from "./ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { Textarea } from "./ui/textarea";
 
 export function OcrResultCard({
   analysis,
@@ -41,55 +44,54 @@ export function OcrResultCard({
   }
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <Card>
+      <CardHeader className="flex flex-col gap-3 space-y-0 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold">{copy.ocrResult}</h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <CardTitle>{copy.ocrResult}</CardTitle>
+          <CardDescription>
             {copy.ocrSubtitle(analysis.sourceLanguage)}
-          </p>
+          </CardDescription>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
+          <Button
             onClick={isEditing ? saveEdit : startEditing}
             type="button"
+            variant="outline"
           >
             {isEditing ? copy.saveEdit : copy.editOcr}
-          </button>
+          </Button>
           {isEditing ? (
-            <button
-              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+            <Button
               onClick={() => setIsEditing(false)}
               type="button"
+              variant="outline"
             >
               {copy.cancelEdit}
-            </button>
+            </Button>
           ) : null}
-          <button
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+          <Button
             disabled={analysis.isFavorite || isSavingFavorite}
             onClick={onSaveFavorite}
             type="button"
+            variant="outline"
           >
             {analysis.isFavorite
               ? copy.saved
               : isSavingFavorite
                 ? copy.saving
                 : copy.save}
-          </button>
+          </Button>
         </div>
-      </div>
+      </CardHeader>
 
-      <div className="mt-5 grid gap-4">
+      <CardContent className="grid gap-4">
         {isEditing ? (
           <>
             <label className="block space-y-2">
               <span className="text-sm font-medium text-slate-700">
                 {copy.originalSentence}
               </span>
-              <textarea
-                className="min-h-24 w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm leading-6 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              <Textarea
                 value={originalSentence}
                 onChange={(event) => setOriginalSentence(event.target.value)}
               />
@@ -98,8 +100,7 @@ export function OcrResultCard({
               <span className="text-sm font-medium text-slate-700">
                 {copy.originalTranslation}
               </span>
-              <textarea
-                className="min-h-24 w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm leading-6 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              <Textarea
                 value={originalTranslation}
                 onChange={(event) => setOriginalTranslation(event.target.value)}
               />
@@ -117,7 +118,7 @@ export function OcrResultCard({
             />
           </>
         )}
-      </div>
-    </section>
+      </CardContent>
+    </Card>
   );
 }

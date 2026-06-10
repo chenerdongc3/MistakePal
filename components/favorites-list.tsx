@@ -1,4 +1,6 @@
 import type { SentenceAnalysis, UiCopy } from "../lib/types";
+import { Button } from "./ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 
 export function FavoritesList({
   copy,
@@ -14,16 +16,16 @@ export function FavoritesList({
   onSelectFavorite: (favorite: SentenceAnalysis) => void;
 }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-        <h2 className="text-lg font-semibold">{copy.favorites}</h2>
-        <p className="text-xs text-slate-500">Showing latest 5 for now.</p>
-      </div>
+    <Card>
+      <CardHeader className="flex flex-col gap-1 space-y-0 sm:flex-row sm:items-end sm:justify-between">
+        <CardTitle>{copy.favorites}</CardTitle>
+        <CardDescription>Showing latest 5 for now.</CardDescription>
+      </CardHeader>
       {favorites.length > 0 ? (
-        <div className="mt-4 space-y-3">
+        <CardContent className="space-y-3">
           {favorites.map((favorite) => (
             <article
-              className="rounded-xl border border-slate-200 bg-slate-50 p-4 transition hover:border-blue-200 hover:bg-blue-50/40"
+              className="rounded-md border border-slate-200 bg-slate-50 p-4 transition hover:border-blue-200 hover:bg-blue-50/40"
               key={favorite.id}
             >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
@@ -46,23 +48,26 @@ export function FavoritesList({
                   <span>{favorite.sourceLanguage}</span>
                   <span>{favorite.explanationLanguage}</span>
                   <span>{formatDate(favorite.createdAt)}</span>
-                  <button
-                    className="font-medium text-red-600 transition hover:text-red-700 disabled:cursor-not-allowed disabled:text-slate-400"
+                  <Button
+                    className="h-auto p-0 text-red-600 hover:bg-transparent hover:text-red-700 disabled:text-slate-400"
                     disabled={deletingFavoriteId === favorite.id}
                     onClick={() => onDeleteFavorite(favorite.id)}
                     type="button"
+                    variant="ghost"
                   >
                     {deletingFavoriteId === favorite.id ? "Deleting..." : "Delete"}
-                  </button>
+                  </Button>
                 </div>
               </div>
             </article>
           ))}
-        </div>
+        </CardContent>
       ) : (
-        <p className="mt-3 text-sm text-slate-500">{copy.favoritesEmpty}</p>
+        <CardContent>
+          <p className="text-sm text-slate-500">{copy.favoritesEmpty}</p>
+        </CardContent>
       )}
-    </section>
+    </Card>
   );
 }
 
