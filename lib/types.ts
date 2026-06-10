@@ -83,6 +83,18 @@ export type PersonalAgentConfig = {
 
 export type SubscriptionPlan = "free" | "plus" | "pro";
 
+export type BillingProfile = {
+  plan: SubscriptionPlan;
+  subscriptionStatus: "inactive" | "active" | "trialing" | "past_due" | "canceled";
+  currentPeriodEnd?: string;
+  quotaPeriodStart?: string;
+  quotaPeriodEnd?: string;
+  monthlyOcrQuota: number;
+  monthlyAiQuota: number;
+  usedOcrCount: number;
+  usedAiCount: number;
+};
+
 export type SectionState = {
   isLoading: boolean;
   error?: string;

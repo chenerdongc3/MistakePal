@@ -1,0 +1,76 @@
+import { NextResponse } from "next/server";
+import {
+  getUserFromRequest,
+  type SentenceAnalysisRow,
+} from "../../../lib/supabase-server";
+
+export async function GET(request: Request) {
+  const { supabase, user, error: authError } = await getUserFromRequest(request);
+
+  if (!supabase || !user) {
+    return NextResponse.json(
+      { error: authError ?? "Login required.", code: "AUTH_REQUIRED" },
+      { status: authError === "Missing Supabase configuration." ? 500 : 401 },
+    );
+  }
+
+  const { data, error } = await supabase
+    .from("sentence_analyses")
+    .select(
+      [
+        "id",
+        "user_id",
+        "image_url",
+        "source_language",
+        "explanation_language",
+        "original_sentence",
+        "original_translation",
+        "translated_sentence",
+        "sentence_breakdown",
+        "vocabulary",
+        "grammar_points",
+        "similar_examples",
+        "learner_tip",
+        "chat_messages",
+        "is_favorite",
+        "created_at",
+        "updated_at",
+      ].join(","),
+    )
+    .eq("user_id", user.id)
+    .order("updated_at", { ascending: false })
+    .limit(10);
+
+  if (error) {
+    console.error("[analyses] Supabase read failed:", error.message);
+    return NextResponse.json(
+      { error: "Could not load recent analyses.", code: "ANALYSES_READ_FAILED" },
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json(
+    ((data ?? []) as unknown as SentenceAnalysisRow[]).map(mapRowToAnalysis),
+  );
+}
+
+function mapRowToAnalysis(row: SentenceAnalysisRow) {
+  return {
+    id: row.id,
+    imageUrl: row.image_url ?? "",
+    sourceLanguage: row.source_language ?? "",
+    explanationLanguage: row.explanation_language ?? "",
+    originalSentence: row.original_sentence ?? "",
+    originalTranslation: row.original_translation ?? "",
+    translatedSentence: row.translated_sentence ?? undefined,
+    sentenceBreakdown: row.sentence_breakdown ?? [],
+    vocabulary: row.vocabulary ?? [],
+    grammarPoints: row.grammar_points ?? [],
+    similarExamples: row.similar_examples ?? [],
+    learnerTip: row.learner_tip ?? undefined,
+    chatMessages: Array.isArray(row.chat_messages) ? row.chat_messages : [],
+    isFavorite: Boolean(row.is_favorite),
+    createdAt: row.created_at ?? new Date().toISOString(),
+    updatedAt: row.updated_at ?? undefined,
+  };
+}

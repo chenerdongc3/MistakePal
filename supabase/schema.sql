@@ -88,3 +88,32 @@ create policy "Users can read own screenshots"
     bucket_id = 'sentence-screenshots'
     and (storage.foldername(name))[1] = (select auth.uid())::text
   );
+
+create table if not exists public.user_billing_profiles (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  plan text not null default 'free',
+  subscription_status text not null default 'inactive',
+  creem_customer_id text,
+  creem_subscription_id text,
+  current_period_end timestamptz,
+  quota_period_start timestamptz default now(),
+  quota_period_end timestamptz default (now() + interval '1 month'),
+  monthly_ocr_quota int not null default 20,
+  monthly_ai_quota int not null default 50,
+  used_ocr_count int not null default 0,
+  used_ai_count int not null default 0,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table public.user_billing_profiles enable row level security;
+
+drop policy if exists "Users can read own billing profile" on public.user_billing_profiles;
+drop policy if exists "Users can insert own billing profile" on public.user_billing_profiles;
+drop policy if exists "Users can update own billing profile" on public.user_billing_profiles;
+
+create policy "Users can read own billing profile"
+  on public.user_billing_profiles
+  for select
+  to authenticated
+  using (auth.uid() = user_id);

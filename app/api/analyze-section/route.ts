@@ -4,6 +4,10 @@ import {
   analyzeLearningSection,
   getGeminiApiKey,
 } from "../../../lib/server/gemini";
+import {
+  checkBillingUsage,
+  recordBillingUsage,
+} from "../../../lib/server/billing";
 import { checkRateLimit } from "../../../lib/server/rate-limit";
 import type { SectionKey, SentenceAnalysisContext } from "../../../lib/types";
 
@@ -56,6 +60,18 @@ export async function POST(request: Request) {
     );
   }
 
+  const billingUsage = await checkBillingUsage(request, "ai");
+
+  if (!billingUsage.allowed) {
+    return NextResponse.json(
+      {
+        error: billingUsage.error,
+        code: "QUOTA_EXCEEDED",
+      },
+      { status: billingUsage.status },
+    );
+  }
+
   try {
     console.log(
       `[analyze-section] Starting ${body.section}: ${body.analysis.originalSentence}`,
@@ -68,6 +84,7 @@ export async function POST(request: Request) {
         body.explanationLanguage ?? body.analysis.explanationLanguage,
       section: body.section,
     });
+    await recordBillingUsage(request, "ai");
     const elapsedMs = Date.now() - startedAt;
 
     console.log(`[analyze-section] ${body.section} completed in ${elapsedMs}ms`);

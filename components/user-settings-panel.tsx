@@ -1,4 +1,5 @@
 import type {
+  BillingProfile,
   PersonalAgentConfig,
   SubscriptionPlan,
 } from "../lib/types";
@@ -16,12 +17,12 @@ const planOptions: {
   {
     id: "plus",
     name: "Plus",
-    description: "Coming soon。后续用于更高平台额度和订阅能力。",
+    description: "每月 300 次 OCR、1000 次 AI 学习分析。",
   },
   {
     id: "pro",
     name: "Pro",
-    description: "Coming soon。后续用于高级学习能力和团队场景。",
+    description: "每月 1000 次 OCR、3000 次 AI 学习分析。",
   },
 ];
 
@@ -96,17 +97,27 @@ const providerPresets: {
 
 export function UserSettingsPanel({
   agentConfig,
+  billingError,
+  billingProfile,
+  billingStatus,
   billingUrl,
+  isBillingLoading,
   plan,
   onAgentConfigChange,
   onBack,
+  onCheckout,
   onPlanChange,
 }: {
   agentConfig: PersonalAgentConfig;
+  billingError: string;
+  billingProfile: BillingProfile | null;
+  billingStatus: string;
   billingUrl: string;
+  isBillingLoading: boolean;
   plan: SubscriptionPlan;
   onAgentConfigChange: (value: PersonalAgentConfig) => void;
   onBack: () => void;
+  onCheckout: (plan: Exclude<SubscriptionPlan, "free">) => void;
   onPlanChange: (value: SubscriptionPlan) => void;
 }) {
   const isUsingPlatformQuota = agentConfig.mode === "platform";
@@ -152,20 +163,30 @@ export function UserSettingsPanel({
       <div className="mt-6 space-y-8">
         <div>
           <h3 className="text-base font-semibold text-slate-950">Plan</h3>
+          {billingError ? (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              {billingError}
+            </div>
+          ) : null}
+          {billingStatus ? (
+            <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700">
+              {billingStatus}
+            </div>
+          ) : null}
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
             {planOptions.map((option) => {
-              const isSelected = plan === option.id;
+              const currentPlan = billingProfile?.plan ?? plan;
+              const isSelected = currentPlan === option.id;
+              const isPaidPlan = option.id !== "free";
 
               return (
-                <button
+                <div
                   className={`rounded-xl border p-4 text-left transition ${
                     isSelected
                       ? "border-blue-500 bg-blue-50 shadow-sm"
                       : "border-slate-200 bg-white hover:bg-slate-50"
                   }`}
                   key={option.id}
-                  onClick={() => onPlanChange(option.id)}
-                  type="button"
                 >
                   <span
                     className={`text-sm font-semibold ${
@@ -174,18 +195,51 @@ export function UserSettingsPanel({
                   >
                     {option.name}
                   </span>
-                  {option.id !== "free" ? (
+                  {isSelected ? (
+                    <span className="mt-2 inline-flex rounded-full border border-blue-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+                      Current
+                    </span>
+                  ) : null}
+                  {isPaidPlan ? (
                     <span className="mt-2 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
-                      Coming soon
+                      Creem
                     </span>
                   ) : null}
                   <span className="mt-2 block text-sm leading-6 text-slate-600">
                     {option.description}
                   </span>
-                </button>
+                  {isPaidPlan ? (
+                    <button
+                      className="mt-4 w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                      disabled={isBillingLoading}
+                      onClick={() =>
+                        onCheckout(option.id as Exclude<SubscriptionPlan, "free">)
+                      }
+                      type="button"
+                    >
+                      {isBillingLoading ? "Starting..." : `Upgrade to ${option.name}`}
+                    </button>
+                  ) : (
+                    <button
+                      className="mt-4 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                      onClick={() => onPlanChange("free")}
+                      type="button"
+                    >
+                      Use Free
+                    </button>
+                  )}
+                </div>
               );
             })}
           </div>
+          {billingProfile ? (
+            <p className="mt-3 text-xs leading-5 text-slate-500">
+              Usage this period: OCR {billingProfile.usedOcrCount}/
+              {billingProfile.monthlyOcrQuota}, AI {billingProfile.usedAiCount}/
+              {billingProfile.monthlyAiQuota}. Status:{" "}
+              {billingProfile.subscriptionStatus}.
+            </p>
+          ) : null}
           {billingUrl ? (
             <a
               className="mt-4 inline-flex rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
@@ -193,7 +247,7 @@ export function UserSettingsPanel({
               rel="noreferrer"
               target="_blank"
             >
-              管理订阅
+              Manage subscription
             </a>
           ) : null}
         </div>

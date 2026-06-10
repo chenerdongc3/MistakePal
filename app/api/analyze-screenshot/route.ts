@@ -4,6 +4,10 @@ import {
   extractTextFromScreenshot,
   getGeminiApiKey,
 } from "../../../lib/server/gemini";
+import {
+  checkBillingUsage,
+  recordBillingUsage,
+} from "../../../lib/server/billing";
 import { checkRateLimit } from "../../../lib/server/rate-limit";
 import { uploadScreenshot } from "../../../lib/server/screenshot-storage";
 
@@ -60,6 +64,18 @@ export async function POST(request: Request) {
     );
   }
 
+  const billingUsage = await checkBillingUsage(request, "ocr");
+
+  if (!billingUsage.allowed) {
+    return NextResponse.json(
+      {
+        error: billingUsage.error,
+        code: "QUOTA_EXCEEDED",
+      },
+      { status: billingUsage.status },
+    );
+  }
+
   const apiKey = getGeminiApiKey();
 
   if (!apiKey) {
@@ -83,6 +99,7 @@ export async function POST(request: Request) {
       image,
     });
     const imageUrl = await uploadScreenshot(image, request);
+    await recordBillingUsage(request, "ocr");
     const elapsedMs = Date.now() - startedAt;
 
     console.log(

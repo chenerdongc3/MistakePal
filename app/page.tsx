@@ -8,9 +8,11 @@ import { ChatCard } from "../components/chat-card";
 import { FavoritesList } from "../components/favorites-list";
 import { LearningSectionsCard } from "../components/learning-sections-card";
 import { OcrResultCard } from "../components/ocr-result-card";
+import { RecentAnalysesList } from "../components/recent-analyses-list";
 import { UserSettingsPanel } from "../components/user-settings-panel";
 import { createBrowserSupabaseClient, getAccessToken } from "../lib/client/supabase";
 import type {
+  BillingProfile,
   ChatMessage,
   PersonalAgentConfig,
   SectionKey,
@@ -54,21 +56,28 @@ export default function Home() {
   const [previewUrl, setPreviewUrl] = useState("");
   const [explanationLanguage, setExplanationLanguage] = useState("Chinese");
   const [analysis, setAnalysis] = useState<SentenceAnalysis | null>(null);
+  const [recentAnalyses, setRecentAnalyses] = useState<SentenceAnalysis[]>([]);
   const [favorites, setFavorites] = useState<SentenceAnalysis[]>([]);
   const [sectionStates, setSectionStates] = useState<
     Partial<Record<SectionKey, SectionState>>
   >({});
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSavingFavorite, setIsSavingFavorite] = useState(false);
+  const [isBillingLoading, setIsBillingLoading] = useState(false);
   const [deletingFavoriteId, setDeletingFavoriteId] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [error, setError] = useState("");
+  const [billingError, setBillingError] = useState("");
+  const [billingStatus, setBillingStatus] = useState("");
   const [analysisStatus, setAnalysisStatus] = useState("");
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [agentConfig, setAgentConfig] =
     useState<PersonalAgentConfig>(defaultAgentConfig);
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan>("free");
+  const [billingProfile, setBillingProfile] = useState<BillingProfile | null>(
+    null,
+  );
   const [activeView, setActiveView] = useState<ActiveView>("learn");
   const copy = getUiCopy(explanationLanguage);
   const billingUrl = process.env.NEXT_PUBLIC_BILLING_URL ?? "";
@@ -102,6 +111,15 @@ export default function Home() {
   }, [selectedPlan]);
 
   useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+
+    if (searchParams.get("billing") === "success") {
+      setBillingStatus("Payment completed. Your subscription will update shortly.");
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
+
+  useEffect(() => {
     if (!supabaseClient) {
       setIsAuthLoading(false);
       return;
@@ -123,9 +141,13 @@ export default function Home() {
 
   useEffect(() => {
     if (user) {
+      fetchRecentAnalyses();
       fetchFavorites();
+      fetchBillingProfile();
     } else {
+      setRecentAnalyses([]);
       setFavorites([]);
+      setBillingProfile(null);
     }
   }, [user]);
 
@@ -183,7 +205,7 @@ export default function Home() {
 
   function getUserFacingErrorMessage(
     errorValue: unknown,
-    context: "ocr" | "favorite" | "save" | "chat",
+    context: "ocr" | "favorite" | "save" | "chat" | "billing",
   ) {
     const message =
       errorValue instanceof Error ? errorValue.message : String(errorValue ?? "");
@@ -222,6 +244,10 @@ export default function Home() {
       return "AI tutor is temporarily unavailable. Please try again in a moment.";
     }
 
+    if (context === "billing") {
+      return "Billing is not ready yet. Add Creem API keys and product IDs, then try again.";
+    }
+
     if (context === "save") {
       return "Changes could not be saved. Please try again.";
     }
@@ -252,6 +278,100 @@ export default function Home() {
       setFavorites(data.slice(0, 5));
     } catch {
       setFavorites([]);
+    }
+  }
+
+  async function fetchRecentAnalyses() {
+    const accessToken = await getAccessToken(supabaseClient);
+
+    if (!accessToken) {
+      setRecentAnalyses([]);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/analyses", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Could not load recent analyses.");
+      }
+
+      const data = (await response.json()) as SentenceAnalysis[];
+      setRecentAnalyses(data.slice(0, 10));
+    } catch (requestError) {
+      console.warn("[analyses] Could not load recent analyses:", requestError);
+      setRecentAnalyses([]);
+    }
+  }
+
+  async function fetchBillingProfile() {
+    const accessToken = await getAccessToken(supabaseClient);
+
+    if (!accessToken) {
+      setBillingProfile(null);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/billing/profile", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Could not load billing profile.");
+      }
+
+      const data = (await response.json()) as BillingProfile;
+      setBillingProfile(data);
+      setSelectedPlan(data.plan);
+    } catch (requestError) {
+      console.warn("[billing] Could not load profile:", requestError);
+      setBillingProfile(null);
+    }
+  }
+
+  async function handleCheckout(plan: Exclude<SubscriptionPlan, "free">) {
+    setBillingError("");
+    setBillingStatus("");
+    setIsBillingLoading(true);
+
+    try {
+      const accessToken = await getAccessToken(supabaseClient);
+
+      if (!accessToken) {
+        throw new Error("Login required.");
+      }
+
+      const response = await fetch("/api/billing/checkout", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ plan }),
+      });
+
+      if (!response.ok) {
+        const errorData = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(errorData?.error ?? "Could not start checkout.");
+      }
+
+      const data = (await response.json()) as {
+        checkoutUrl: string;
+      };
+      window.location.href = data.checkoutUrl;
+    } catch (requestError) {
+      setBillingError(getUserFacingErrorMessage(requestError, "billing"));
+    } finally {
+      setIsBillingLoading(false);
     }
   }
 
@@ -374,6 +494,8 @@ export default function Home() {
         return null;
       });
       setAnalysis(persisted ?? data);
+      upsertRecentAnalysis(persisted ?? data);
+      fetchBillingProfile();
       setSectionStates({});
       setChatMessages([]);
       setChatInput("");
@@ -404,9 +526,11 @@ export default function Home() {
     setError("");
 
     try {
+      const accessToken = await getAccessToken(supabaseClient);
       const response = await fetch("/api/analyze-section", {
         method: "POST",
         headers: {
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -433,6 +557,8 @@ export default function Home() {
       };
 
       setAnalysis(nextAnalysis);
+      fetchBillingProfile();
+      upsertRecentAnalysis(nextAnalysis);
       persistAnalysis(nextAnalysis).catch((persistError) => {
         console.warn("[analysis] Could not persist section result:", persistError);
       });
@@ -515,6 +641,7 @@ export default function Home() {
         updatedAt: updated.updatedAt ?? analysis.updatedAt,
       };
       setAnalysis(nextFavorite);
+      upsertRecentAnalysis(nextFavorite);
       setFavorites((currentFavorites) => {
         const withoutDuplicate = currentFavorites.filter(
           (favorite) => favorite.id !== analysis.id,
@@ -557,6 +684,13 @@ export default function Home() {
 
       setFavorites((currentFavorites) =>
         currentFavorites.filter((favorite) => favorite.id !== id),
+      );
+      setRecentAnalyses((currentAnalyses) =>
+        currentAnalyses.map((currentAnalysis) =>
+          currentAnalysis.id === id
+            ? { ...currentAnalysis, isFavorite: false }
+            : currentAnalysis,
+        ),
       );
       setAnalysis((current) =>
         current?.id === id ? { ...current, isFavorite: false } : current,
@@ -748,14 +882,18 @@ export default function Home() {
   }
 
   function handleSelectFavorite(favorite: SentenceAnalysis) {
+    handleSelectAnalysis(favorite);
+  }
+
+  function handleSelectAnalysis(nextAnalysis: SentenceAnalysis) {
     setImage(null);
     setPreviewUrl("");
-    setAnalysis(favorite);
-    setExplanationLanguage(favorite.explanationLanguage || "Chinese");
+    setAnalysis(nextAnalysis);
+    setExplanationLanguage(nextAnalysis.explanationLanguage || "Chinese");
     setSectionStates({});
     setAnalysisStatus("");
     setChatInput("");
-    setChatMessages(favorite.chatMessages ?? []);
+    setChatMessages(nextAnalysis.chatMessages ?? []);
     setError("");
 
     window.setTimeout(() => {
@@ -764,6 +902,15 @@ export default function Home() {
         block: "start",
       });
     }, 0);
+  }
+
+  function upsertRecentAnalysis(nextAnalysis: SentenceAnalysis) {
+    setRecentAnalyses((currentAnalyses) => {
+      const withoutDuplicate = currentAnalyses.filter(
+        (currentAnalysis) => currentAnalysis.id !== nextAnalysis.id,
+      );
+      return [nextAnalysis, ...withoutDuplicate].slice(0, 10);
+    });
   }
 
   function handleUpdateOcr(nextValues: {
@@ -787,6 +934,7 @@ export default function Home() {
     };
 
     setAnalysis(nextAnalysis);
+    upsertRecentAnalysis(nextAnalysis);
     setFavorites((currentFavorites) =>
       currentFavorites.map((favorite) =>
         favorite.id === nextAnalysis.id ? nextAnalysis : favorite,
@@ -820,9 +968,11 @@ export default function Home() {
     setError("");
 
     try {
+      const accessToken = await getAccessToken(supabaseClient);
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: {
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -853,6 +1003,11 @@ export default function Home() {
         },
       ];
       setChatMessages(nextChatMessages);
+      fetchBillingProfile();
+      upsertRecentAnalysis({
+        ...analysis,
+        chatMessages: nextChatMessages,
+      });
       if (analysis.isFavorite) {
         setFavorites((currentFavorites) =>
           currentFavorites.map((favorite) =>
@@ -942,10 +1097,15 @@ export default function Home() {
         ) : activeView === "settings" ? (
           <UserSettingsPanel
             agentConfig={agentConfig}
+            billingError={billingError}
+            billingProfile={billingProfile}
+            billingStatus={billingStatus}
             billingUrl={billingUrl}
+            isBillingLoading={isBillingLoading}
             plan={selectedPlan}
             onAgentConfigChange={setAgentConfig}
             onBack={() => setActiveView("learn")}
+            onCheckout={handleCheckout}
             onPlanChange={setSelectedPlan}
           />
         ) : (
@@ -1063,6 +1223,10 @@ export default function Home() {
               favorites={favorites}
               onDeleteFavorite={handleDeleteFavorite}
               onSelectFavorite={handleSelectFavorite}
+            />
+            <RecentAnalysesList
+              analyses={recentAnalyses}
+              onSelectAnalysis={handleSelectAnalysis}
             />
           </>
         )}
